@@ -6,7 +6,10 @@
 // When compiling natively:
 use eframe::{egui, epi};
 mod widgets;
+use std::thread;
+use tokio::runtime::Runtime;
 use widgets::map_tile;
+use std::collections::HashMap;
 
 struct MyApp {
     name: String,
@@ -29,24 +32,6 @@ impl epi::App for MyApp {
 
     fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
         let Self { name, age } = self;
-        let image_data = include_bytes!("terrain.png");
-        use image::GenericImageView;
-        let image = image::load_from_memory(image_data).expect("Failed to load image");
-        let image_buffer = image.to_rgba8();
-        let size = (image.width() as usize, image.height() as usize);
-        let pixels = image_buffer.into_vec();
-        assert_eq!(size.0 * size.1 * 4, pixels.len());
-        let pixels: Vec<_> = pixels
-            .chunks_exact(4)
-            .map(|p| egui::Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3]))
-            .collect();
-
-        // Allocate a texture:
-        let texture = frame
-            .tex_allocator()
-            .alloc_srgba_premultiplied(size, &pixels);
-        let size = egui::Vec2::new(size.0 as f32, size.1 as f32);
-        let my_texture_id = Some((size, texture));
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("My egui Application");
             ui.horizontal(|ui| {
@@ -54,7 +39,11 @@ impl epi::App for MyApp {
                 ui.text_edit_singleline(name);
             });
             ui.add(egui::Slider::new(age, 0..=120).text("age"));
-            ui.add(map_tile::MapTile::new(texture, size));
+            let tpng: String = "texture.png".to_string();
+            ui.add(map_tile::MapTile::load_img(
+                "/hdd/rust/projects/map_maker/map_maker/src/terrain.png",
+                frame,
+            ));
             if ui.button("Click each year").clicked() {
                 *age += 1;
             }
@@ -65,8 +54,17 @@ impl epi::App for MyApp {
         frame.set_window_size(ctx.used_size());
     }
 }
-
+fn tokio_runtime_thread() {
+    let mut rt = Runtime::new().unwrap();
+    let handle = rt.spawn(async {
+        let resp = reqwest::get("https://stamen-tiles.a.ssl.fastly.net/terrain/2/1/3.png").await;
+        println!("response: {:#?}", resp);
+    });
+    rt.block_on(handle);
+}
 fn main() {
+    let tokio_thread_handle = thread::spawn(tokio_runtime_thread);
     let options = eframe::NativeOptions::default();
     eframe::run_native(Box::new(MyApp::default()), options);
+    tokio_thread_handle.join().unwrap();
 }

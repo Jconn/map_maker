@@ -11,7 +11,7 @@
 ///
 /// Se also [`crate::ImageButton`].
 #[must_use = "You should put this widget in an ui with `ui.add(widget);`"]
-use crate::widgets::*; 
+use crate::widgets::*;
 #[derive(Clone, Copy, Debug)]
 pub struct MapTile {
     texture_id: TextureId,
@@ -21,6 +21,9 @@ pub struct MapTile {
     tint: Color32,
     sense: Sense,
 }
+use std::io::Read;
+use std::fs::File;
+use reqwest;
 
 impl MapTile {
     pub fn new(texture_id: TextureId, size: impl Into<Vec2>) -> Self {
@@ -65,6 +68,35 @@ impl MapTile {
     pub fn size(&self) -> Vec2 {
         self.size
     }
+
+    pub fn load_img(img_path: &str, frame: &mut epi::Frame<'_>) -> MapTile {
+        println!("on file {}", img_path);
+        let mut f = File::open(img_path).expect("unable to read file ");
+        let mut buffer = Vec::new();
+        f.read_to_end(&mut buffer).expect("failed to read data");
+        use image::GenericImageView;
+        let image = image::load_from_memory(&buffer).expect("Failed to load image");
+        let image_buffer = image.to_rgba8();
+        let size = (image.width() as usize, image.height() as usize);
+        let pixels = image_buffer.into_vec();
+        assert_eq!(size.0 * size.1 * 4, pixels.len());
+        let pixels: Vec<_> = pixels
+            .chunks_exact(4)
+            .map(|p| egui::Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3]))
+            .collect();
+
+        // Allocate a texture:
+        let texture = frame
+            .tex_allocator()
+            .alloc_srgba_premultiplied(size, &pixels);
+        let size = egui::Vec2::new(size.0 as f32, size.1 as f32);
+        MapTile::new(texture,size)
+    }
+
+    //pub fn load_http(frame: &mut epi::Frame<'_>) -> MapTile {
+
+
+    //}
 
     pub fn paint_at(&self, ui: &mut Ui, rect: Rect) {
         let Self {
