@@ -4,67 +4,109 @@
 #![warn(clippy::all, rust_2018_idioms)]
 
 // When compiling natively:
-use eframe::{egui, epi};
 mod widgets;
+use bytes::Bytes;
 use std::thread;
-use tokio::runtime::Runtime;
+use thiserror::Error;
 use widgets::map_tile;
-use std::collections::HashMap;
+use Result;
 
-struct MyApp {
-    name: String,
-    age: u32,
+use iced::{
+    executor, slider, Alignment, Application, Column, Command, Container, Element, Length, Sandbox,
+    Settings, Slider, Text,
+};
+//fn tokio_runtime_thread(tx: Sender<Bytes>) {
+//    let mut rt = Runtime::new().unwrap();
+//    let handle = rt.spawn(async move {
+//        let resp = reqwest::get("https://stamen-tiles.a.ssl.fastly.net/terrain/2/1/3.png")
+//            .await?
+//            .bytes()
+//            .await?;
+//        tx.send(resp).await;
+//        Ok::<(), reqwest::Error>(()) // <- note the explicit type annotation here
+//    });
+//    rt.block_on(handle);
+//}
+pub fn main() -> iced::Result {
+    //let (tx, mut rx) = mpsc::channel(100);
+    //let tokio_thread_handle = thread::spawn(|| tokio_runtime_thread(tx));
+    let result = MapMaker::run(Settings::default());
+    //tokio_thread_handle.join().unwrap();
+    result
 }
 
-impl Default for MyApp {
-    fn default() -> Self {
-        Self {
-            name: "Arthur".to_owned(),
-            age: 42,
-        }
-    }
+struct MapMaker {
+    slider: slider::State,
+    bytes: bytes::Bytes,
 }
 
-impl epi::App for MyApp {
-    fn name(&self) -> &str {
-        "My egui App"
+#[derive(Debug)]
+enum Message {
+    LoadedImage(Result<Bytes, MyError>),
+}
+
+#[derive(Debug, Error)]
+enum MyError {
+    #[error("api error")]
+    APIError,
+    #[error("https error")]
+    HttpsError(#[from] reqwest::Error),
+}
+
+impl MapMaker {
+    async fn load() -> Result<Bytes, MyError> {
+        println!("loading");
+        let resp = reqwest::get("https://stamen-tiles.a.ssl.fastly.net/terrain/2/1/3.png")
+            .await?
+            .bytes()
+            .await?;
+        println!("found my stuff");
+        Ok(resp)
+    }
+}
+impl Application for MapMaker {
+    type Executor = executor::Default;
+    type Message = Message;
+    type Flags = ();
+
+    fn new(_flags: ()) -> (Self, Command<Message>) {
+        (
+            MapMaker {
+                bytes: Bytes::new(),
+                slider: slider::State::new(),
+            },
+            Command::perform(MapMaker::load(), Message::LoadedImage),
+        )
     }
 
-    fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
-        let Self { name, age } = self;
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("My egui Application");
-            ui.horizontal(|ui| {
-                ui.label("Your name: ");
-                ui.text_edit_singleline(name);
-            });
-            ui.add(egui::Slider::new(age, 0..=120).text("age"));
-            let tpng: String = "texture.png".to_string();
-            ui.add(map_tile::MapTile::load_img(
-                "/hdd/rust/projects/map_maker/map_maker/src/terrain.png",
-                frame,
-            ));
-            if ui.button("Click each year").clicked() {
-                *age += 1;
+    fn title(&self) -> String {
+        String::from("MapMaker")
+    }
+
+    fn update(&mut self, message: Message) -> Command<Message> {
+        match message {
+            Message::LoadedImage(resp) => {
+                if let Ok(bytes) = resp {
+                    self.bytes = bytes;
+                }
             }
-            ui.label(format!("Hello '{}', age {}", name, age));
-        });
+        }
+        Command::none()
+    }
 
-        // Resize the native window to be just the size we need it to be:
-        frame.set_window_size(ctx.used_size());
+    fn view(&mut self) -> Element<Message> {
+        let content = Column::new()
+            .padding(20)
+            .spacing(20)
+            .max_width(500)
+            .push(map_tile::MapTile::new(self.bytes.clone()));
+
+        Container::new(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x()
+            .center_y()
+            .into()
     }
 }
-fn tokio_runtime_thread() {
-    let mut rt = Runtime::new().unwrap();
-    let handle = rt.spawn(async {
-        let resp = reqwest::get("https://stamen-tiles.a.ssl.fastly.net/terrain/2/1/3.png").await;
-        println!("response: {:#?}", resp);
-    });
-    rt.block_on(handle);
-}
-fn main() {
-    let tokio_thread_handle = thread::spawn(tokio_runtime_thread);
-    let options = eframe::NativeOptions::default();
-    eframe::run_native(Box::new(MyApp::default()), options);
-    tokio_thread_handle.join().unwrap();
-}
+
