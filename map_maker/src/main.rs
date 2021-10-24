@@ -36,13 +36,17 @@ pub fn main() -> iced::Result {
 }
 
 struct MapMaker {
-    slider: slider::State,
-    bytes: bytes::Bytes,
+    //
+    //should store an arry of vectors
+    //each vector is an image tile
+    //the widget handles loading the image tiles
+    //
+    tiles: [[Vec<u8>; 4]; 4],
 }
 
 #[derive(Debug)]
 enum Message {
-    LoadedImage(Result<Bytes, MyError>),
+    LoadedImage(Result<(u32, Vec<u8>), MyError>),
 }
 
 #[derive(Debug, Error)]
@@ -54,14 +58,15 @@ enum MyError {
 }
 
 impl MapMaker {
-    async fn load() -> Result<Bytes, MyError> {
+    async fn load() -> Result<(u32, Vec<u8>), MyError> {
         println!("loading");
         let resp = reqwest::get("https://stamen-tiles.a.ssl.fastly.net/terrain/2/1/3.png")
             .await?
             .bytes()
-            .await?;
+            .await?
+            .to_vec();
         println!("found my stuff");
-        Ok(resp)
+        Ok((0, resp))
     }
 }
 impl Application for MapMaker {
@@ -70,10 +75,13 @@ impl Application for MapMaker {
     type Flags = ();
 
     fn new(_flags: ()) -> (Self, Command<Message>) {
+        // strange syntax
+        //let tiles: [[Vec<u8>; 4]; 4] = [[Vec::new(); 4]; 4];
+        let tiles: [[Vec<u8>; 4]; 4] = Default::default();
         (
             MapMaker {
-                bytes: Bytes::new(),
-                slider: slider::State::new(),
+                //TODO: add a new function that handles initializing the array
+                tiles: tiles.clone(),
             },
             Command::perform(MapMaker::load(), Message::LoadedImage),
         )
@@ -86,8 +94,12 @@ impl Application for MapMaker {
     fn update(&mut self, message: Message) -> Command<Message> {
         match message {
             Message::LoadedImage(resp) => {
-                if let Ok(bytes) = resp {
-                    self.bytes = bytes;
+                if let Ok(tile_tuple) = resp {
+                    self.tiles[tile_tuple.0 as usize][tile_tuple.0 as usize] =
+                        (tile_tuple.1).clone();
+                    self.tiles[0][1] = (tile_tuple.1).clone();
+                    self.tiles[0][2] = (tile_tuple.1).clone();
+                    self.tiles[(3) as usize][(3) as usize] = tile_tuple.1;
                 }
             }
         }
@@ -98,8 +110,8 @@ impl Application for MapMaker {
         let content = Column::new()
             .padding(20)
             .spacing(20)
-            .max_width(500)
-            .push(map_tile::MapTile::new(self.bytes.clone()));
+            .max_width(2500)
+            .push(map_tile::MapTile::new(self.tiles.clone()));
 
         Container::new(content)
             .width(Length::Fill)
@@ -109,4 +121,3 @@ impl Application for MapMaker {
             .into()
     }
 }
-

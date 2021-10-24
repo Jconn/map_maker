@@ -18,50 +18,61 @@ use iced_native::{
 };
 
 pub struct MapTile {
-    handle: image::Handle,
+    tile_handles: [[Option<image::Handle>; 4]; 4],
     width: Length,
     height: Length,
 }
 
 impl MapTile {
-    pub fn new(bytes: Bytes) -> Self {
-        let handle = image::Handle::from_memory(bytes.to_vec());
+    pub fn new(tiles: [[Vec<u8>; 4]; 4]) -> Self {
+        //let mut tile_handles: [[Option<image::Handle>; 4]; 4] = [[None; 4]; 4];
+        let mut tile_handles: [[Option<image::Handle>; 4]; 4] = Default::default();
+
+        for (idx_x, x) in tiles.iter().enumerate() {
+            for (idx_y, y) in x.iter().enumerate() {
+                tile_handles[idx_x][idx_y] =
+                    Some(image::Handle::from_memory(tiles[idx_x][idx_y].clone()));
+            }
+        }
+
+        //let tile_handles = image::Handle::from_memory(bytes.to_vec());
         Self {
-            handle,
-            width: Length::Shrink,
-            height: Length::Shrink,
+            tile_handles,
+            width: Length::Fill,
+            height: Length::Fill,
         }
     }
 
-    /// Returns the bounds of the underlying image, given the bounds of
-    /// the [`Viewer`]. Scaling will be applied and original aspect ratio
-    /// will be respected.
-    fn image_size<Renderer>(&self, renderer: &Renderer, bounds: Size) -> Size
-    where
-        Renderer: self::Renderer + iced_native::image::Renderer + iced_native::Renderer,
-    {
-        let (width, height) = renderer.dimensions(&self.handle);
+    // Returns the bounds of the underlying image, given the bounds of
+    // the [`Viewer`]. Scaling will be applied and original aspect ratio
+    // will be respected.
+    //fn image_size<Renderer>(&self, renderer: &Renderer, bounds: Size) -> Size
+    //where
+    //    Renderer: self::Renderer + iced_native::image::Renderer + iced_native::Renderer,
+    //{
+    //    //let (width, height) = renderer.dimensions(&self.handle);
+    //    let (width, height) = (256 * 16, 256 * 16);
 
-        let (width, height) = {
-            let dimensions = (width as f32, height as f32);
+    //    let (width, height) = {
+    //        let dimensions = (width as f32, height as f32);
 
-            let width_ratio = bounds.width / dimensions.0;
-            let height_ratio = bounds.height / dimensions.1;
+    //        let width_ratio = bounds.width / dimensions.0;
+    //        let height_ratio = bounds.height / dimensions.1;
 
-            let ratio = width_ratio.min(height_ratio);
+    //        let ratio = width_ratio.min(height_ratio);
 
-            //let scale = self.state.scale;
-            let scale = 1.0;
+    //        //let scale = self.state.scale;
+    //        let scale = 1.0;
 
-            if ratio < 1.0 {
-                (dimensions.0 * ratio * scale, dimensions.1 * ratio * scale)
-            } else {
-                (dimensions.0 * scale, dimensions.1 * scale)
-            }
-        };
+    //        if ratio < 1.0 {
+    //            (dimensions.0 * ratio * scale, dimensions.1 * ratio * scale)
+    //        } else {
+    //            (dimensions.0 * scale, dimensions.1 * scale)
+    //        }
+    //    };
 
-        Size::new(width, height)
-    }
+    //    Size::new(width, height)
+    //}
 }
 
 impl<Message, Renderer> Widget<Message, Renderer> for MapTile
@@ -77,7 +88,8 @@ where
     }
 
     fn layout(&self, renderer: &Renderer, limits: &layout::Limits) -> layout::Node {
-        let (width, height) = renderer.dimensions(&self.handle);
+        //let (width, height) = renderer.dimensions(&self.handle);
+        let (width, height) = (256 * 16, 256 * 16);
 
         let mut size = limits
             .width(self.width)
@@ -137,28 +149,27 @@ where
 
         let bounds = layout.bounds();
 
-        let image_size = self.image_size(renderer, bounds.size());
+        //let image_size = self.image_size(renderer, bounds.size());
+
+        //let translation = {
+        //    let image_top_left = Vector::new(
+        //        bounds.width / 2.0 - image_size.width / 2.0,
+        //        bounds.height / 2.0 - image_size.height / 2.0,
+        //    );
+        //    image_top_left
+        //};
 
         let translation = {
-            let image_top_left = Vector::new(
-                bounds.width / 2.0 - image_size.width / 2.0,
-                bounds.height / 2.0 - image_size.height / 2.0,
-            );
+            let image_top_left = Vector::new(0.0, 0.0);
             image_top_left
         };
-        self::Renderer::draw(
-            renderer,
-            bounds,
-            image_size,
-            translation,
-            self.handle.clone(),
-        )
+        self::Renderer::draw(renderer, bounds, translation, &self.tile_handles)
         //renderer.draw(self.handle.clone(), layout)
     }
 
     fn hash_layout(&self, state: &mut Hasher) {
         use std::hash::Hash;
-        self.handle.hash(state);
+        self.tile_handles.hash(state);
         self.width.hash(state);
         self.height.hash(state);
     }
@@ -230,9 +241,9 @@ pub trait Renderer: iced_native::Renderer + iced_native::image::Renderer + Sized
     fn draw(
         &mut self,
         bounds: Rectangle,
-        image_size: Size,
         translation: Vector,
-        handle: image::Handle,
+        //handle: image::Handle,
+        tile_handles: &[[Option<image::Handle>; 4]; 4],
     ) -> Self::Output;
 }
 
@@ -253,26 +264,51 @@ where
     fn draw(
         &mut self,
         bounds: Rectangle,
-        image_size: Size,
         translation: Vector,
-        handle: image::Handle,
+        //handle: image::Handle,
+        //
+        tile_handles: &[[Option<image::Handle>; 4]; 4],
     ) -> Self::Output {
+        let mut primitives_vec: Vec<Primitive> = Vec::new();
+
+        for (idx_x, x) in tile_handles.iter().enumerate() {
+            for (idx_y, y) in x.iter().enumerate() {
+                if let Some(tile) = &tile_handles[idx_x][idx_y] {
+                    println!("making image for indices {}, {}", idx_x, idx_y);
+                    let top_left = Vector::new(idx_x as f32 * 256.0, idx_y as f32 * 256.0);
+
+                    let new_clip = Primitive::Clip {
+                        bounds,
+                        content: Box::new(Primitive::Translate {
+                            //translation,
+                            translation: top_left,
+                            content: Box::new(Primitive::Image {
+                                handle: tile.clone(),
+                                //bounds: Rectangle {
+                                //    x: 0.0,
+                                //    y: 0.0,
+                                //    ..Rectangle::with_size(image_size)
+                                //},
+                                bounds: Rectangle {
+                                    x: (idx_x * 256) as f32,
+                                    y: (idx_y * 256) as f32,
+                                    width: 256.0,
+                                    height: 256.0,
+                                },
+                            }),
+                        }),
+                        offset: Vector::new((idx_x * 256) as u32, (idx_y * 256) as u32),
+                    };
+                    primitives_vec.push(new_clip);
+                }
+                //self.tile_handles[idx_x][idx_y] = Some(image::Handle::from_memory(tiles[idx_x][idx_y]));
+            }
+        }
         (
             {
-                Primitive::Clip {
-                    bounds,
-                    content: Box::new(Primitive::Translate {
-                        translation,
-                        content: Box::new(Primitive::Image {
-                            handle,
-                            bounds: Rectangle {
-                                x: bounds.x,
-                                y: bounds.y,
-                                ..Rectangle::with_size(image_size)
-                            },
-                        }),
-                    }),
-                    offset: Vector::new(0, 0),
+                //
+                Primitive::Group {
+                    primitives: primitives_vec,
                 }
             },
             { mouse::Interaction::Idle },
