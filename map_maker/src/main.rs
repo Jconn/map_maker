@@ -44,9 +44,24 @@ struct MapMaker {
     tiles: [[Vec<u8>; 4]; 4],
 }
 
+#[derive(Clone, Debug)]
+struct Tile {
+    target_url: (u32, u32, u32),
+    dest_tile: (u32, u32),
+    image: Vec<u8>,
+}
+impl Tile {
+    fn new(target_url: (u32, u32, u32), dest_tile: (u32, u32) )-> Self {
+        Self {
+            target_url,
+            dest_tile,
+            image: Vec::new(),
+        }
+    }
+}
 #[derive(Debug)]
 enum Message {
-    LoadedImage(Result<(u32, Vec<u8>), MyError>),
+    LoadedImage(Result<Vec<Tile>, MyError>),
 }
 
 #[derive(Debug, Error)]
@@ -58,15 +73,22 @@ enum MyError {
 }
 
 impl MapMaker {
-    async fn load() -> Result<(u32, Vec<u8>), MyError> {
-        println!("loading");
-        let resp = reqwest::get("https://stamen-tiles.a.ssl.fastly.net/terrain/2/1/3.png")
+    async fn load(load_tiles: Vec<Tile>) -> Result<Vec<Tile>, MyError> {
+        let mut return_tiles = load_tiles.clone();
+        for mut tile in &mut return_tiles {
+            let (x, y, z) = tile.target_url;
+            println!("loading {}, {}, {}", x, y, z);
+            let resp = reqwest::get(format!(
+                "https://stamen-tiles.a.ssl.fastly.net/terrain/{}/{}/{}.png",
+                z, x, y
+            ))
             .await?
             .bytes()
             .await?
             .to_vec();
-        println!("found my stuff");
-        Ok((0, resp))
+            tile.image = resp;
+        }
+        Ok(return_tiles)
     }
 }
 impl Application for MapMaker {
@@ -78,12 +100,19 @@ impl Application for MapMaker {
         // strange syntax
         //let tiles: [[Vec<u8>; 4]; 4] = [[Vec::new(); 4]; 4];
         let tiles: [[Vec<u8>; 4]; 4] = Default::default();
+
+        let mut request_tiles: Vec<Tile> = Vec::new();
+        for x in 0..4 {
+            for y in 0..4 {
+                request_tiles.push(Tile::new((x, y, 2), (x,y)));
+            }
+        }
         (
             MapMaker {
                 //TODO: add a new function that handles initializing the array
                 tiles: tiles.clone(),
             },
-            Command::perform(MapMaker::load(), Message::LoadedImage),
+            Command::perform(MapMaker::load(request_tiles), Message::LoadedImage),
         )
     }
 
@@ -94,12 +123,11 @@ impl Application for MapMaker {
     fn update(&mut self, message: Message) -> Command<Message> {
         match message {
             Message::LoadedImage(resp) => {
-                if let Ok(tile_tuple) = resp {
-                    self.tiles[tile_tuple.0 as usize][tile_tuple.0 as usize] =
-                        (tile_tuple.1).clone();
-                    self.tiles[0][1] = (tile_tuple.1).clone();
-                    self.tiles[0][2] = (tile_tuple.1).clone();
-                    self.tiles[(3) as usize][(3) as usize] = tile_tuple.1;
+                if let Ok(tiles) = resp {
+                    for tile in tiles {
+                        let (x, y) = tile.dest_tile;
+                        self.tiles[x as usize][y as usize] = tile.image;
+                    }
                 }
             }
         }

@@ -274,7 +274,6 @@ where
         for (idx_x, x) in tile_handles.iter().enumerate() {
             for (idx_y, y) in x.iter().enumerate() {
                 if let Some(tile) = &tile_handles[idx_x][idx_y] {
-                    println!("making image for indices {}, {}", idx_x, idx_y);
                     let top_left = Vector::new(idx_x as f32 * 256.0, idx_y as f32 * 256.0);
 
                     let new_clip = Primitive::Clip {
