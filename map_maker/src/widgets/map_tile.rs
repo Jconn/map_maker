@@ -13,18 +13,101 @@ use iced_graphics::backend::{self, Backend};
 use iced_graphics::{Defaults, Primitive};
 use iced_native::event;
 use iced_native::{
-    layout, mouse, Background, Clipboard, Color, Element, Event, Hasher, Layout, Length, Point,
-    Rectangle, Size, Vector, Widget,
+    button, layout, mouse, overlay, Background, Button, Clipboard, Color, Element, Event, Hasher,
+    Layout, Length, Overlay, Point, Rectangle, Size, Text, Vector, Widget,
 };
 
-pub struct MapTile {
+pub struct MapTile<'a, B, Message, Renderer>
+where
+    B: Fn(&'a mut button::State) -> Button<'_, Message, Renderer>,
+    Message: Clone,
+    Renderer: button::Renderer,
+{
+    state: &'a mut button::State,
+    zoom_in: B,
     tile_handles: [[Option<image::Handle>; 4]; 4],
     width: Length,
     height: Length,
 }
 
-impl MapTile {
-    pub fn new(tiles: [[Vec<u8>; 4]; 4]) -> Self {
+pub struct TileOverlay<'a, B, Message, Renderer>
+where
+    Message: 'a + Clone,
+    Renderer: 'a + self::Renderer + iced_native::button::Renderer,
+    B: Fn(&'a mut button::State) -> Button<'a, Message, Renderer>,
+{
+    /// # type Button<'a, Message> =
+    /// #     iced_native::Button<'a, Message, iced_native::renderer::Null>;
+    state: &'a mut button::State,
+    zoom_in: B,
+    width: f32,
+    height: f32,
+}
+impl<'a, B, Message, Renderer> TileOverlay<'a, B, Message, Renderer>
+where
+    Message: 'a + Clone,
+    B: Fn(&mut button::State) -> Button<'_, Message, Renderer>,
+    Renderer: 'a +self::Renderer + iced_native::button::Renderer + iced_native::text::Renderer,
+{
+    pub fn new(state: &'a mut button::State, zoom_in: B) -> Self {
+        Self {
+            state,
+            zoom_in,
+            width: 64.0,
+            height: 64.0,
+        }
+    }
+    pub fn overlay(self, position: Point) -> overlay::Element<'a, Message, Renderer> {
+        overlay::Element::new(position, Box::new(self))
+    }
+}
+impl<'a, B, Message, Renderer> Overlay<Message, Renderer> for TileOverlay<'a, B, Message, Renderer>
+where
+    B: Fn(&mut button::State) -> Button<'_, Message, Renderer>,
+    Message: Clone,
+    Renderer: self::Renderer + iced_native::button::Renderer,
+{
+    fn layout(&self, renderer: &Renderer, bounds: Size, position: Point) -> layout::Node {
+        let size = Size::new(self.width, self.height);
+
+        let mut node = layout::Node::new(size);
+        node.move_to(position);
+
+        node
+    }
+
+    fn hash_layout(&self, state: &mut Hasher, position: Point) {
+        use std::hash::Hash;
+
+        //(self.width).hash(state);
+        //(self.height).hash(state);
+        self.zoom_in.hash_layout(state);
+    }
+
+    fn draw(
+        &self,
+        renderer: &mut Renderer,
+        defaults: &Renderer::Defaults,
+        layout: Layout<'_>,
+        cursor_position: Point,
+    ) -> Renderer::Output {
+        self.zoom_in.draw(
+            renderer,
+            defaults,
+            layout,
+            cursor_position,
+            &Rectangle::default(),
+        )
+    }
+}
+impl<'a, B, Message, Renderer> MapTile<'a, B, Message, Renderer>
+where
+    Message: Clone,
+    Renderer: self::Renderer + iced_native::button::Renderer,
+    B: Fn(&'a mut button::State) -> Button<'a, Message, Renderer>,
+{
+    //pub fn new(state: &'a mut button::State, zoom_in: B) -> Self {
+    pub fn new(tiles: [[Vec<u8>; 4]; 4], state: &'a mut button::State, zoom_in: B) -> Self {
         //let mut tile_handles: [[Option<image::Handle>; 4]; 4] = [[None; 4]; 4];
         let mut tile_handles: [[Option<image::Handle>; 4]; 4] = Default::default();
 
@@ -37,6 +120,8 @@ impl MapTile {
 
         //let tile_handles = image::Handle::from_memory(bytes.to_vec());
         Self {
+            state,
+            zoom_in,
             tile_handles,
             width: Length::Fill,
             height: Length::Fill,
@@ -75,9 +160,16 @@ impl MapTile {
     //}
 }
 
-impl<Message, Renderer> Widget<Message, Renderer> for MapTile
+impl<'a, B, Message, Renderer> Widget<Message, Renderer> for MapTile<'a, B, Message, Renderer>
 where
-    Renderer: self::Renderer + iced_native::image::Renderer + iced_native::Renderer,
+    B: 'a + Fn(&mut button::State) -> Button<'_, Message, Renderer>,
+    Message: 'a + Clone,
+    Renderer: 'a
+        + self::Renderer
+        + iced_native::image::Renderer
+        + iced_native::Renderer
+        + iced_native::text::Renderer
+        + iced_native::button::Renderer,
 {
     fn width(&self) -> Length {
         self.width
@@ -173,6 +265,16 @@ where
         self.width.hash(state);
         self.height.hash(state);
     }
+
+    /// Returns the overlay of the [`Widget`], if there is any.
+    fn overlay(&mut self, _layout: Layout<'_>) -> Option<overlay::Element<'_, Message, Renderer>> {
+        let position = Point::default();
+        Some(
+            TileOverlay::new(&mut self.state, &self.zoom_in).overlay(Point::new(0.0, 0.0)),
+            //overlay::Element::new(position, Box::new(TileOverlay::new().overlay()))
+            //    .overlay(Point::new(0.0, 0.0)),
+        )
+    }
 }
 
 /// The local state of a [`Viewer`].
@@ -245,14 +347,28 @@ pub trait Renderer: iced_native::Renderer + iced_native::image::Renderer + Sized
         //handle: image::Handle,
         tile_handles: &[[Option<image::Handle>; 4]; 4],
     ) -> Self::Output;
+
+    /// Decorates a the list of options of a [`MapTile`].
+    ///
+    /// This method can be used to draw a background for the [`Menu`].
+    fn decorate(
+        &mut self,
+        bounds: Rectangle,
+        //cursor_position: Point,
+        //style: &<Self as Renderer>::Style,
+        //primitive: Self::Output,
+        tile_handles: &[[Option<image::Handle>; 4]; 4],
+    ) -> Self::Output;
 }
 
-impl<'a, Message, Renderer> From<MapTile> for Element<'a, Message, Renderer>
+impl<'a, B, Message, Renderer> From<MapTile<'a, B, Message, Renderer>>
+    for Element<'a, Message, Renderer>
 where
-    Renderer: 'a + self::Renderer + iced_native::image::Renderer,
-    Message: 'a,
+    B: 'a + Fn(&mut button::State) -> Button<'_, Message, Renderer>,
+    Message: 'a + Clone,
+    Renderer: 'a + button::Renderer + iced_native::text::Renderer + self::Renderer,
 {
-    fn from(map_tile: MapTile) -> Element<'a, Message, Renderer> {
+    fn from(map_tile: MapTile<'a, B, Message, Renderer>) -> Element<'a, Message, Renderer> {
         Element::new(map_tile)
     }
 }
@@ -261,6 +377,59 @@ impl<B> Renderer for iced_graphics::Renderer<B>
 where
     B: Backend + backend::Image,
 {
+    fn decorate(
+        &mut self,
+        bounds: Rectangle,
+        //handle: image::Handle,
+        //
+        tile_handles: &[[Option<image::Handle>; 4]; 4],
+    ) -> Self::Output {
+        println!("hitting decorate");
+        let mut primitives_vec: Vec<Primitive> = Vec::new();
+
+        for (idx_x, x) in tile_handles.iter().enumerate() {
+            for (idx_y, y) in x.iter().enumerate() {
+                if let Some(tile) = &tile_handles[idx_x][idx_y] {
+                    let top_left = Vector::new(idx_x as f32 * 256.0, idx_y as f32 * 256.0);
+
+                    let new_clip = Primitive::Clip {
+                        bounds,
+                        content: Box::new(Primitive::Translate {
+                            //translation,
+                            translation: top_left,
+                            content: Box::new(Primitive::Image {
+                                handle: tile.clone(),
+                                //bounds: Rectangle {
+                                //    x: 0.0,
+                                //    y: 0.0,
+                                //    ..Rectangle::with_size(image_size)
+                                //},
+                                bounds: Rectangle {
+                                    x: (idx_x * 256) as f32,
+                                    y: (idx_y * 256) as f32,
+                                    width: 256.0,
+                                    height: 256.0,
+                                },
+                            }),
+                        }),
+                        offset: Vector::new((idx_x * 256) as u32, (idx_y * 256) as u32),
+                    };
+                    primitives_vec.push(new_clip);
+                }
+                //self.tile_handles[idx_x][idx_y] = Some(image::Handle::from_memory(tiles[idx_x][idx_y]));
+            }
+        }
+        (
+            {
+                //
+                Primitive::Group {
+                    primitives: primitives_vec,
+                }
+            },
+            { mouse::Interaction::Idle },
+        )
+    }
+
     fn draw(
         &mut self,
         bounds: Rectangle,

@@ -12,8 +12,8 @@ use widgets::map_tile;
 use Result;
 
 use iced::{
-    executor, slider, Alignment, Application, Column, Command, Container, Element, Length, Sandbox,
-    Settings, Slider, Text,
+    button, executor, slider, Alignment, Application, Button, Column, Command, Container, Element,
+    Length, Sandbox, Settings, Slider, Text,
 };
 //fn tokio_runtime_thread(tx: Sender<Bytes>) {
 //    let mut rt = Runtime::new().unwrap();
@@ -51,7 +51,7 @@ struct Tile {
     image: Vec<u8>,
 }
 impl Tile {
-    fn new(target_url: (u32, u32, u32), dest_tile: (u32, u32) )-> Self {
+    fn new(target_url: (u32, u32, u32), dest_tile: (u32, u32)) -> Self {
         Self {
             target_url,
             dest_tile,
@@ -62,6 +62,7 @@ impl Tile {
 #[derive(Debug)]
 enum Message {
     LoadedImage(Result<Vec<Tile>, MyError>),
+    ButtonPressed(),
 }
 
 #[derive(Debug, Error)]
@@ -104,7 +105,7 @@ impl Application for MapMaker {
         let mut request_tiles: Vec<Tile> = Vec::new();
         for x in 0..4 {
             for y in 0..4 {
-                request_tiles.push(Tile::new((x, y, 2), (x,y)));
+                request_tiles.push(Tile::new((x, y, 2), (x, y)));
             }
         }
         (
@@ -130,16 +131,27 @@ impl Application for MapMaker {
                     }
                 }
             }
+            Message::ButtonPressed() => {
+                println!("me button was pressed");
+            }
         }
         Command::none()
     }
 
     fn view(&mut self) -> Element<Message> {
-        let content = Column::new()
-            .padding(20)
-            .spacing(20)
-            .max_width(2500)
-            .push(map_tile::MapTile::new(self.tiles.clone()));
+        let mut button_state = button::State::new();
+        let content =
+            Column::new()
+                .padding(20)
+                .spacing(20)
+                .max_width(2500)
+                .push(map_tile::MapTile::new(
+                    self.tiles.clone(),
+                    &mut button_state,
+                    |state| {
+                        Button::new(state, Text::new("Press Me!")).on_press(Message::ButtonPressed)
+                    },
+                ));
 
         Container::new(content)
             .width(Length::Fill)
