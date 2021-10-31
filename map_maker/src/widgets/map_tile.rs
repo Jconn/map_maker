@@ -48,7 +48,7 @@ where
 {
     pub fn new(zoom_in: Button<'a, Message, Renderer>) -> Self {
         Self {
-            zoom_in: ,
+            zoom_in,
             width: 64.0,
             height: 64.0,
         }
