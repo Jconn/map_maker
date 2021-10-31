@@ -81,7 +81,9 @@ where
 
         //(self.width).hash(state);
         //(self.height).hash(state);
-        self.zoom_in.hash_layout(state);
+        let button = (self.zoom_in)(&mut self.state); 
+        button.hash_layout(state);
+        //self.zoom_in.hash_layout(state);
     }
 
     fn draw(
@@ -91,7 +93,9 @@ where
         layout: Layout<'_>,
         cursor_position: Point,
     ) -> Renderer::Output {
-        self.zoom_in.draw(
+
+        let button = (self.zoom_in)(&mut self.state); 
+        button.draw(
             renderer,
             defaults,
             layout,
