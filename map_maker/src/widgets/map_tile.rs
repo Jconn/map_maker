@@ -13,7 +13,7 @@ use iced_graphics::backend::{self, Backend};
 use iced_graphics::{Defaults, Primitive};
 use iced_native::event;
 use iced_native::{
-    button, layout, mouse, overlay, Background, Button, Clipboard, Color, Element, Event, Hasher,
+    button, layout, mouse, overlay,layout::Limits, Background, Button, Clipboard, Color, Element, Event, Hasher,
     Layout, Length, Overlay, Point, Rectangle, Size, Text, Vector, Widget,
 };
 
@@ -30,29 +30,25 @@ where
     height: Length,
 }
 
-pub struct TileOverlay<'a, B, Message, Renderer>
+pub struct TileOverlay<'a, Message, Renderer>
 where
     Message: 'a + Clone,
     Renderer: 'a + self::Renderer + iced_native::button::Renderer,
-    B: Fn(&'a mut button::State) -> Button<'a, Message, Renderer>,
 {
     /// # type Button<'a, Message> =
     /// #     iced_native::Button<'a, Message, iced_native::renderer::Null>;
-    state: &'a mut button::State,
-    zoom_in: B,
+    zoom_in: Button<'a, Message, Renderer>,
     width: f32,
     height: f32,
 }
-impl<'a, B, Message, Renderer> TileOverlay<'a, B, Message, Renderer>
+impl<'a, Message, Renderer> TileOverlay<'a, Message, Renderer>
 where
     Message: 'a + Clone,
-    B: Fn(&mut button::State) -> Button<'_, Message, Renderer>,
-    Renderer: 'a +self::Renderer + iced_native::button::Renderer + iced_native::text::Renderer,
+    Renderer: 'a + self::Renderer + iced_native::button::Renderer + iced_native::text::Renderer,
 {
-    pub fn new(state: &'a mut button::State, zoom_in: B) -> Self {
+    pub fn new(zoom_in: Button<'a, Message, Renderer>) -> Self {
         Self {
-            state,
-            zoom_in,
+            zoom_in: ,
             width: 64.0,
             height: 64.0,
         }
@@ -61,19 +57,15 @@ where
         overlay::Element::new(position, Box::new(self))
     }
 }
-impl<'a, B, Message, Renderer> Overlay<Message, Renderer> for TileOverlay<'a, B, Message, Renderer>
+impl<'a, Message, Renderer> Overlay<Message, Renderer> for TileOverlay<'a, Message, Renderer>
 where
-    B: Fn(&mut button::State) -> Button<'_, Message, Renderer>,
     Message: Clone,
     Renderer: self::Renderer + iced_native::button::Renderer,
 {
     fn layout(&self, renderer: &Renderer, bounds: Size, position: Point) -> layout::Node {
-        let size = Size::new(self.width, self.height);
-
-        let mut node = layout::Node::new(size);
-        node.move_to(position);
-
-        node
+        let limits = Limits::new(Size::ZERO, bounds);
+        let button_layout = self.zoom_in.layout(renderer, &limits);
+        button_layout
     }
 
     fn hash_layout(&self, state: &mut Hasher, position: Point) {
@@ -81,11 +73,27 @@ where
 
         //(self.width).hash(state);
         //(self.height).hash(state);
-        let button = (self.zoom_in)(&mut self.state); 
-        button.hash_layout(state);
-        //self.zoom_in.hash_layout(state);
+        self.zoom_in.hash_layout(state);
     }
 
+    fn on_event(
+        &mut self,
+        event: Event,
+        layout: Layout<'_>,
+        cursor_position: Point,
+        renderer: &Renderer,
+        clipboard: &mut dyn Clipboard,
+        messages: &mut Vec<Message>,
+    ) -> event::Status {
+        self.zoom_in.on_event(
+            event,
+            layout,
+            cursor_position,
+            renderer,
+            clipboard,
+            messages,
+        )
+    }
     fn draw(
         &self,
         renderer: &mut Renderer,
@@ -93,9 +101,7 @@ where
         layout: Layout<'_>,
         cursor_position: Point,
     ) -> Renderer::Output {
-
-        let button = (self.zoom_in)(&mut self.state); 
-        button.draw(
+        self.zoom_in.draw(
             renderer,
             defaults,
             layout,
@@ -108,7 +114,7 @@ impl<'a, B, Message, Renderer> MapTile<'a, B, Message, Renderer>
 where
     Message: Clone,
     Renderer: self::Renderer + iced_native::button::Renderer,
-    B: Fn(&'a mut button::State) -> Button<'a, Message, Renderer>,
+    B: Fn(&mut button::State) -> Button<'_, Message, Renderer>,
 {
     //pub fn new(state: &'a mut button::State, zoom_in: B) -> Self {
     pub fn new(tiles: [[Vec<u8>; 4]; 4], state: &'a mut button::State, zoom_in: B) -> Self {
@@ -166,7 +172,7 @@ where
 
 impl<'a, B, Message, Renderer> Widget<Message, Renderer> for MapTile<'a, B, Message, Renderer>
 where
-    B: 'a + Fn(&mut button::State) -> Button<'_, Message, Renderer>,
+    B: Fn(&mut button::State) -> Button<'_, Message, Renderer>,
     Message: 'a + Clone,
     Renderer: 'a
         + self::Renderer
@@ -273,8 +279,9 @@ where
     /// Returns the overlay of the [`Widget`], if there is any.
     fn overlay(&mut self, _layout: Layout<'_>) -> Option<overlay::Element<'_, Message, Renderer>> {
         let position = Point::default();
+        let zoom_in = (self.zoom_in)(self.state);
         Some(
-            TileOverlay::new(&mut self.state, &self.zoom_in).overlay(Point::new(0.0, 0.0)),
+            TileOverlay::new(zoom_in).overlay(Point::new(0.0, 0.0)),
             //overlay::Element::new(position, Box::new(TileOverlay::new().overlay()))
             //    .overlay(Point::new(0.0, 0.0)),
         )
@@ -332,7 +339,13 @@ impl State {
 /// able to use a [`Viewer`] in your user interface.
 ///
 /// [renderer]: crate::renderer
-pub trait Renderer: iced_native::Renderer + iced_native::image::Renderer + Sized {
+pub trait Renderer:
+    iced_native::Renderer
+    + iced_native::image::Renderer
+    + iced_native::button::Renderer
+    + iced_native::text::Renderer
+    + Sized
+{
     /// Draws the [`Viewer`].
     ///
     /// It receives:
@@ -365,21 +378,9 @@ pub trait Renderer: iced_native::Renderer + iced_native::image::Renderer + Sized
     ) -> Self::Output;
 }
 
-impl<'a, B, Message, Renderer> From<MapTile<'a, B, Message, Renderer>>
-    for Element<'a, Message, Renderer>
-where
-    B: 'a + Fn(&mut button::State) -> Button<'_, Message, Renderer>,
-    Message: 'a + Clone,
-    Renderer: 'a + button::Renderer + iced_native::text::Renderer + self::Renderer,
-{
-    fn from(map_tile: MapTile<'a, B, Message, Renderer>) -> Element<'a, Message, Renderer> {
-        Element::new(map_tile)
-    }
-}
-
 impl<B> Renderer for iced_graphics::Renderer<B>
 where
-    B: Backend + backend::Image,
+    B: Backend + backend::Image + backend::Text + backend::Backend,
 {
     fn decorate(
         &mut self,
@@ -485,5 +486,23 @@ where
             },
             { mouse::Interaction::Idle },
         )
+    }
+}
+
+//impl<'a, Message, B> Into<Element<'a, Message, Renderer<B>>> for Circle
+//impl<'a, B, Message, Renderer> Into<Element<'a, Message, Renderer>> for MapTile<'a, B, Message, Renderer>
+impl<'a, B, Message, Renderer> Into<Element<'a, Message, Renderer>>
+    for MapTile<'a, B, Message, Renderer>
+where
+    B: 'a + Fn(&mut button::State) -> Button<'_, Message, Renderer>,
+    Message: 'a + Clone,
+    Renderer: 'a
+        + self::Renderer
+        + iced_native::image::Renderer
+        + iced_native::text::Renderer
+        + iced_native::button::Renderer,
+{
+    fn into(self) -> Element<'a, Message, Renderer> {
+        Element::new(self)
     }
 }

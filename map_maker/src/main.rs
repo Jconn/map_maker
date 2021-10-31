@@ -42,6 +42,7 @@ struct MapMaker {
     //the widget handles loading the image tiles
     //
     tiles: [[Vec<u8>; 4]; 4],
+    button_state: button::State,
 }
 
 #[derive(Clone, Debug)]
@@ -59,10 +60,11 @@ impl Tile {
         }
     }
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 enum Message {
-    LoadedImage(Result<Vec<Tile>, MyError>),
-    ButtonPressed(),
+    LoadedImage(Vec<Tile>),
+    ButtonPressed,
+    ImageLoadFailed,
 }
 
 #[derive(Debug, Error)]
@@ -91,6 +93,13 @@ impl MapMaker {
         }
         Ok(return_tiles)
     }
+
+    fn process_load(resp: Result<Vec<Tile>, MyError>) -> Message {
+        match resp {
+            Ok(tiles) => Message::LoadedImage(tiles),
+            Err(err) => Message::ImageLoadFailed,
+        }
+    }
 }
 impl Application for MapMaker {
     type Executor = executor::Default;
@@ -112,8 +121,9 @@ impl Application for MapMaker {
             MapMaker {
                 //TODO: add a new function that handles initializing the array
                 tiles: tiles.clone(),
+                button_state: button::State::new(),
             },
-            Command::perform(MapMaker::load(request_tiles), Message::LoadedImage),
+            Command::perform(MapMaker::load(request_tiles), MapMaker::process_load),
         )
     }
 
@@ -123,23 +133,32 @@ impl Application for MapMaker {
 
     fn update(&mut self, message: Message) -> Command<Message> {
         match message {
-            Message::LoadedImage(resp) => {
-                if let Ok(tiles) = resp {
-                    for tile in tiles {
-                        let (x, y) = tile.dest_tile;
-                        self.tiles[x as usize][y as usize] = tile.image;
-                    }
+            Message::LoadedImage(tiles) => {
+                for tile in tiles {
+                    let (x, y) = tile.dest_tile;
+                    self.tiles[x as usize][y as usize] = tile.image;
                 }
             }
-            Message::ButtonPressed() => {
+            Message::ButtonPressed => {
                 println!("me button was pressed");
+            }
+
+            Message::ImageLoadFailed => {
+                println!("image load failed");
             }
         }
         Command::none()
     }
 
-    fn view(&mut self) -> Element<Message> {
-        let mut button_state = button::State::new();
+    fn view(&mut self) -> Element<'_, Message> {
+        //fn zoom_spawner(state: &mut button::State) -> Button<'_, Message> {
+        //    Button::new(state, Text::new("Press Me!")).on_press(Message::ButtonPressed)
+        //}
+        //let content = map_tile::MapTile::new(self.tiles.clone(), &mut self.button_state, zoom_spawner);
+
+        //let content = map_tile::MapTile::new(self.tiles.clone(), &mut self.button_state, |state|-> Button<'_, Message>{
+        //    Button::new(state, Text::new("Press Me!")).on_press(Message::ButtonPressed)
+        //});
         let content =
             Column::new()
                 .padding(20)
@@ -147,7 +166,7 @@ impl Application for MapMaker {
                 .max_width(2500)
                 .push(map_tile::MapTile::new(
                     self.tiles.clone(),
-                    &mut button_state,
+                    &mut self.button_state,
                     |state| {
                         Button::new(state, Text::new("Press Me!")).on_press(Message::ButtonPressed)
                     },
