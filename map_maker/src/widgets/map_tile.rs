@@ -16,12 +16,9 @@ use iced_native::{
     button, layout, mouse, overlay,layout::Limits, Background, Button, Clipboard, Color, Element, Event, Hasher,
     Layout, Length, Overlay, Point, Rectangle, Size, Text, Vector, Widget,
 };
+use crate::widgets::map_tile_overlay::TileOverlay;
 
-pub struct MapTile<'a, B, Message, Renderer>
-where
-    B: Fn(&'a mut button::State) -> Button<'_, Message, Renderer>,
-    Message: Clone,
-    Renderer: button::Renderer,
+pub struct MapTile<'a, B>
 {
     state: &'a mut button::State,
     zoom_in: B,
@@ -30,147 +27,8 @@ where
     height: Length,
 }
 
-pub struct TileOverlay<'a, Message, Renderer>
-where
-    Message: 'a + Clone,
-    Renderer: 'a + self::Renderer + iced_native::button::Renderer,
-{
-    /// # type Button<'a, Message> =
-    /// #     iced_native::Button<'a, Message, iced_native::renderer::Null>;
-    zoom_in: Button<'a, Message, Renderer>,
-    width: f32,
-    height: f32,
-}
-impl<'a, Message, Renderer> TileOverlay<'a, Message, Renderer>
-where
-    Message: 'a + Clone,
-    Renderer: 'a + self::Renderer + iced_native::button::Renderer + iced_native::text::Renderer,
-{
-    pub fn new(zoom_in: Button<'a, Message, Renderer>) -> Self {
-        Self {
-            zoom_in,
-            width: 64.0,
-            height: 64.0,
-        }
-    }
-    pub fn overlay(self, position: Point) -> overlay::Element<'a, Message, Renderer> {
-        overlay::Element::new(position, Box::new(self))
-    }
-}
-impl<'a, Message, Renderer> Overlay<Message, Renderer> for TileOverlay<'a, Message, Renderer>
-where
-    Message: Clone,
-    Renderer: self::Renderer + iced_native::button::Renderer,
-{
-    fn layout(&self, renderer: &Renderer, bounds: Size, position: Point) -> layout::Node {
-        let limits = Limits::new(Size::ZERO, bounds);
-        let button_layout = self.zoom_in.layout(renderer, &limits);
-        button_layout
-    }
 
-    fn hash_layout(&self, state: &mut Hasher, position: Point) {
-        use std::hash::Hash;
-
-        //(self.width).hash(state);
-        //(self.height).hash(state);
-        self.zoom_in.hash_layout(state);
-    }
-
-    fn on_event(
-        &mut self,
-        event: Event,
-        layout: Layout<'_>,
-        cursor_position: Point,
-        renderer: &Renderer,
-        clipboard: &mut dyn Clipboard,
-        messages: &mut Vec<Message>,
-    ) -> event::Status {
-        self.zoom_in.on_event(
-            event,
-            layout,
-            cursor_position,
-            renderer,
-            clipboard,
-            messages,
-        )
-    }
-    fn draw(
-        &self,
-        renderer: &mut Renderer,
-        defaults: &Renderer::Defaults,
-        layout: Layout<'_>,
-        cursor_position: Point,
-    ) -> Renderer::Output {
-        self.zoom_in.draw(
-            renderer,
-            defaults,
-            layout,
-            cursor_position,
-            &Rectangle::default(),
-        )
-    }
-}
-impl<'a, B, Message, Renderer> MapTile<'a, B, Message, Renderer>
-where
-    Message: Clone,
-    Renderer: self::Renderer + iced_native::button::Renderer,
-    B: Fn(&mut button::State) -> Button<'_, Message, Renderer>,
-{
-    //pub fn new(state: &'a mut button::State, zoom_in: B) -> Self {
-    pub fn new(tiles: [[Vec<u8>; 4]; 4], state: &'a mut button::State, zoom_in: B) -> Self {
-        //let mut tile_handles: [[Option<image::Handle>; 4]; 4] = [[None; 4]; 4];
-        let mut tile_handles: [[Option<image::Handle>; 4]; 4] = Default::default();
-
-        for (idx_x, x) in tiles.iter().enumerate() {
-            for (idx_y, y) in x.iter().enumerate() {
-                tile_handles[idx_x][idx_y] =
-                    Some(image::Handle::from_memory(tiles[idx_x][idx_y].clone()));
-            }
-        }
-
-        //let tile_handles = image::Handle::from_memory(bytes.to_vec());
-        Self {
-            state,
-            zoom_in,
-            tile_handles,
-            width: Length::Fill,
-            height: Length::Fill,
-        }
-    }
-
-    // Returns the bounds of the underlying image, given the bounds of
-    // the [`Viewer`]. Scaling will be applied and original aspect ratio
-    // will be respected.
-    //fn image_size<Renderer>(&self, renderer: &Renderer, bounds: Size) -> Size
-    //where
-    //    Renderer: self::Renderer + iced_native::image::Renderer + iced_native::Renderer,
-    //{
-    //    //let (width, height) = renderer.dimensions(&self.handle);
-    //    let (width, height) = (256 * 16, 256 * 16);
-
-    //    let (width, height) = {
-    //        let dimensions = (width as f32, height as f32);
-
-    //        let width_ratio = bounds.width / dimensions.0;
-    //        let height_ratio = bounds.height / dimensions.1;
-
-    //        let ratio = width_ratio.min(height_ratio);
-
-    //        //let scale = self.state.scale;
-    //        let scale = 1.0;
-
-    //        if ratio < 1.0 {
-    //            (dimensions.0 * ratio * scale, dimensions.1 * ratio * scale)
-    //        } else {
-    //            (dimensions.0 * scale, dimensions.1 * scale)
-    //        }
-    //    };
-
-    //    Size::new(width, height)
-    //}
-}
-
-impl<'a, B, Message, Renderer> Widget<Message, Renderer> for MapTile<'a, B, Message, Renderer>
+impl<'a, B, Message, Renderer> Widget<Message, Renderer> for MapTile<'a, B>
 where
     B: Fn(&mut button::State) -> Button<'_, Message, Renderer>,
     Message: 'a + Clone,
@@ -333,6 +191,65 @@ impl State {
     }
 }
 
+impl<'a, B, Message, Renderer> MapTile<'a, B>
+where
+    Message: Clone,
+    Renderer: self::Renderer + iced_native::button::Renderer,
+    B: Fn(&mut button::State) -> Button<'_, Message, Renderer>,
+{
+    //pub fn new(state: &'a mut button::State, zoom_in: B) -> Self {
+    pub fn new(tiles: [[Vec<u8>; 4]; 4], state: &'a mut button::State, zoom_in: B) -> Self {
+        //let mut tile_handles: [[Option<image::Handle>; 4]; 4] = [[None; 4]; 4];
+        let mut tile_handles: [[Option<image::Handle>; 4]; 4] = Default::default();
+
+        for (idx_x, x) in tiles.iter().enumerate() {
+            for (idx_y, y) in x.iter().enumerate() {
+                tile_handles[idx_x][idx_y] =
+                    Some(image::Handle::from_memory(tiles[idx_x][idx_y].clone()));
+            }
+        }
+
+        //let tile_handles = image::Handle::from_memory(bytes.to_vec());
+        Self {
+            state,
+            zoom_in,
+            tile_handles,
+            width: Length::Fill,
+            height: Length::Fill,
+        }
+    }
+
+    // Returns the bounds of the underlying image, given the bounds of
+    // the [`Viewer`]. Scaling will be applied and original aspect ratio
+    // will be respected.
+    //fn image_size<Renderer>(&self, renderer: &Renderer, bounds: Size) -> Size
+    //where
+    //    Renderer: self::Renderer + iced_native::image::Renderer + iced_native::Renderer,
+    //{
+    //    //let (width, height) = renderer.dimensions(&self.handle);
+    //    let (width, height) = (256 * 16, 256 * 16);
+
+    //    let (width, height) = {
+    //        let dimensions = (width as f32, height as f32);
+
+    //        let width_ratio = bounds.width / dimensions.0;
+    //        let height_ratio = bounds.height / dimensions.1;
+
+    //        let ratio = width_ratio.min(height_ratio);
+
+    //        //let scale = self.state.scale;
+    //        let scale = 1.0;
+
+    //        if ratio < 1.0 {
+    //            (dimensions.0 * ratio * scale, dimensions.1 * ratio * scale)
+    //        } else {
+    //            (dimensions.0 * scale, dimensions.1 * scale)
+    //        }
+    //    };
+
+    //    Size::new(width, height)
+    //}
+}
 /// The renderer of an [`Viewer`].
 ///
 /// Your [renderer] will need to implement this trait before being
@@ -492,7 +409,7 @@ where
 //impl<'a, Message, B> Into<Element<'a, Message, Renderer<B>>> for Circle
 //impl<'a, B, Message, Renderer> Into<Element<'a, Message, Renderer>> for MapTile<'a, B, Message, Renderer>
 impl<'a, B, Message, Renderer> Into<Element<'a, Message, Renderer>>
-    for MapTile<'a, B, Message, Renderer>
+    for MapTile<'a, B>
 where
     B: 'a + Fn(&mut button::State) -> Button<'_, Message, Renderer>,
     Message: 'a + Clone,
