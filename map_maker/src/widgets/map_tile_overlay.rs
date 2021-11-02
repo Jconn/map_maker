@@ -13,8 +13,8 @@ use iced_graphics::backend::{self, Backend};
 use iced_graphics::{Defaults, Primitive};
 use iced_native::event;
 use iced_native::{
-    button, layout, mouse, overlay,layout::Limits, Background, Button, Clipboard, Color, Element, Event, Hasher,
-    Layout, Length, Overlay, Point, Rectangle, Size, Text, Vector, Widget,
+    button, layout, layout::Limits, mouse, overlay, Background, Button, Clipboard, Color, Element,
+    Event, Hasher, Layout, Length, Overlay, Point, Rectangle, Size, Text, Vector, Widget,
 };
 
 pub struct TileOverlay<'a, Message, Renderer>
@@ -25,16 +25,21 @@ where
     /// # type Button<'a, Message> =
     /// #     iced_native::Button<'a, Message, iced_native::renderer::Null>;
     zoom_in: Button<'a, Message, Renderer>,
+    zoom_out: Button<'a, Message, Renderer>,
 }
 impl<'a, Message, Renderer> TileOverlay<'a, Message, Renderer>
 where
     Message: 'a + Clone,
-    Renderer: 'a + crate::widgets::map_tile::Renderer + iced_native::button::Renderer + iced_native::text::Renderer,
+    Renderer: 'a
+        + crate::widgets::map_tile::Renderer
+        + iced_native::button::Renderer
+        + iced_native::text::Renderer,
 {
-    pub fn new(zoom_in: Button<'a, Message, Renderer>) -> Self {
-        Self {
-            zoom_in,
-        }
+    pub fn new(
+        zoom_in: Button<'a, Message, Renderer>,
+        zoom_out: Button<'a, Message, Renderer>,
+    ) -> Self {
+        Self { zoom_in, zoom_out }
     }
     pub fn overlay(self, position: Point) -> overlay::Element<'a, Message, Renderer> {
         overlay::Element::new(position, Box::new(self))
@@ -47,8 +52,15 @@ where
 {
     fn layout(&self, renderer: &Renderer, bounds: Size, position: Point) -> layout::Node {
         let limits = Limits::new(Size::ZERO, bounds);
-        let button_layout = self.zoom_in.layout(renderer, &limits);
-        button_layout
+        let zoom_in_layout = self.zoom_in.layout(renderer, &limits);
+        let mut zoom_out_layout = self.zoom_out.layout(renderer, &limits);
+        zoom_out_layout.move_to(Point::new(128.0,0.0));
+
+        let mut node = layout::Node::with_children(
+            Size::new(512.0, 512.0),
+            vec![zoom_in_layout, zoom_out_layout],
+        );
+        node
     }
 
     fn hash_layout(&self, state: &mut Hasher, position: Point) {
@@ -57,6 +69,7 @@ where
         //(self.width).hash(state);
         //(self.height).hash(state);
         self.zoom_in.hash_layout(state);
+        self.zoom_out.hash_layout(state);
     }
 
     fn on_event(
@@ -68,14 +81,31 @@ where
         clipboard: &mut dyn Clipboard,
         messages: &mut Vec<Message>,
     ) -> event::Status {
-        self.zoom_in.on_event(
-            event,
-            layout,
+        let status = event::Status::Ignored;
+        let mut children = layout.children();
+        let zoom_in_layout = children
+            .next()
+            .expect("Native: layout should have zoom in button for MapTile");
+        let zoom_out_layout = children
+            .next()
+            .expect("Native: layout should have zoom out button for MapTile");
+        let zoom_in_status = self.zoom_in.on_event(
+            event.clone(),
+            zoom_in_layout,
             cursor_position,
             renderer,
             clipboard,
             messages,
-        )
+        );
+        let zoom_out_status = self.zoom_out.on_event(
+            event,
+            zoom_out_layout,
+            cursor_position,
+            renderer,
+            clipboard,
+            messages,
+        );
+        status.merge(zoom_in_status).merge(zoom_out_status)
     }
     fn draw(
         &self,
@@ -84,12 +114,13 @@ where
         layout: Layout<'_>,
         cursor_position: Point,
     ) -> Renderer::Output {
-        self.zoom_in.draw(
+        Renderer::overlay_draw(
             renderer,
             defaults,
             layout,
             cursor_position,
-            &Rectangle::default(),
+            &self.zoom_in,
+            &self.zoom_out,
         )
     }
 }

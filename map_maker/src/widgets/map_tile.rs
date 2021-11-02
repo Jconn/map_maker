@@ -8,25 +8,25 @@ use bytes::{BufMut, Bytes, BytesMut};
 // Of course, you can choose to make the implementation renderer-agnostic,
 // if you wish to, by creating your own `Renderer` trait, which could be
 // implemented by `iced_wgpu` and other renderers.
+use crate::widgets::map_tile_overlay::TileOverlay;
 use iced::image;
 use iced_graphics::backend::{self, Backend};
 use iced_graphics::{Defaults, Primitive};
 use iced_native::event;
 use iced_native::{
-    button, layout, mouse, overlay,layout::Limits, Background, Button, Clipboard, Color, Element, Event, Hasher,
-    Layout, Length, Overlay, Point, Rectangle, Size, Text, Vector, Widget,
+    button, layout, layout::Limits, mouse, overlay, Background, Button, Clipboard, Color, Element,
+    Event, Hasher, Layout, Length, Overlay, Point, Rectangle, Size, Text, Vector, Widget,
 };
-use crate::widgets::map_tile_overlay::TileOverlay;
 
-pub struct MapTile<'a, B>
-{
-    state: &'a mut button::State,
+pub struct MapTile<'a, B> {
+    zoom_in_state: &'a mut button::State,
+    zoom_out_state: &'a mut button::State,
     zoom_in: B,
+    zoom_out: B,
     tile_handles: [[Option<image::Handle>; 4]; 4],
     width: Length,
     height: Length,
 }
-
 
 impl<'a, B, Message, Renderer> Widget<Message, Renderer> for MapTile<'a, B>
 where
@@ -137,9 +137,10 @@ where
     /// Returns the overlay of the [`Widget`], if there is any.
     fn overlay(&mut self, _layout: Layout<'_>) -> Option<overlay::Element<'_, Message, Renderer>> {
         let position = Point::default();
-        let zoom_in = (self.zoom_in)(self.state);
+        let zoom_in = (self.zoom_in)(&mut self.zoom_in_state);
+        let zoom_out = (self.zoom_out)(&mut self.zoom_out_state);
         Some(
-            TileOverlay::new(zoom_in).overlay(Point::new(0.0, 0.0)),
+            TileOverlay::new(zoom_in, zoom_out).overlay(Point::new(0.0, 0.0)),
             //overlay::Element::new(position, Box::new(TileOverlay::new().overlay()))
             //    .overlay(Point::new(0.0, 0.0)),
         )
@@ -197,8 +198,13 @@ where
     Renderer: self::Renderer + iced_native::button::Renderer,
     B: Fn(&mut button::State) -> Button<'_, Message, Renderer>,
 {
-    //pub fn new(state: &'a mut button::State, zoom_in: B) -> Self {
-    pub fn new(tiles: [[Vec<u8>; 4]; 4], state: &'a mut button::State, zoom_in: B) -> Self {
+    pub fn new(
+        tiles: [[Vec<u8>; 4]; 4],
+        zoom_in_state: &'a mut button::State,
+        zoom_out_state: &'a mut button::State,
+        zoom_in: B,
+        zoom_out: B,
+    ) -> Self {
         //let mut tile_handles: [[Option<image::Handle>; 4]; 4] = [[None; 4]; 4];
         let mut tile_handles: [[Option<image::Handle>; 4]; 4] = Default::default();
 
@@ -211,8 +217,10 @@ where
 
         //let tile_handles = image::Handle::from_memory(bytes.to_vec());
         Self {
-            state,
+            zoom_in_state,
+            zoom_out_state,
             zoom_in,
+            zoom_out,
             tile_handles,
             width: Length::Fill,
             height: Length::Fill,
@@ -293,6 +301,26 @@ pub trait Renderer:
         //primitive: Self::Output,
         tile_handles: &[[Option<image::Handle>; 4]; 4],
     ) -> Self::Output;
+
+    fn overlay_draw<Message: Clone>(
+        &mut self,
+        defaults: &Self::Defaults,
+        layout: Layout<'_>,
+        cursor_position: Point,
+        zoom_in: &iced_native::Button<'_, Message, Self>,
+        zoom_out: &iced_native::Button<'_, Message, Self>,
+    ) -> Self::Output;
+
+    //fn draw<Message>(
+    //    &mut self,
+    //    env: DrawEnvironment<'_, Self::Defaults, Self::Style, Focus>,
+    //    color: &Color,
+    //    sat_value_canvas_cache: &canvas::Cache,
+    //    hue_canvas_cache: &canvas::Cache,
+    //    //text_input: &Element<'_, Message, Self>,
+    //    cancel_button: &Element<'_, Message, Self>,
+    //    submit_button: &Element<'_, Message, Self>,
+    //) -> Self::Output;
 }
 
 impl<B> Renderer for iced_graphics::Renderer<B>
@@ -404,12 +432,55 @@ where
             { mouse::Interaction::Idle },
         )
     }
+
+    fn overlay_draw<Message: Clone>(
+        &mut self,
+        defaults: &Self::Defaults,
+        layout: Layout<'_>,
+        cursor_position: Point,
+        zoom_in: &iced_native::Button<'_, Message, Self>,
+        zoom_out: &iced_native::Button<'_, Message, Self>,
+    ) -> Self::Output {
+
+        let bounds = layout.bounds();
+        let mouse_interaction = mouse::Interaction::default();
+        let mut children = layout.children();
+        let zoom_in_layout = children
+            .next()
+            .expect("Native: layout should have zoom in button for MapTile");
+        let zoom_out_layout = children
+            .next()
+            .expect("Native: layout should have zoom out button for MapTile");
+
+        let (zoom_in_button, zoom_in_interaction) = zoom_in.draw(
+            self,
+            defaults,
+            zoom_in_layout,
+            cursor_position,
+            &bounds,
+        );
+
+        let (zoom_out_button, zoom_out_interaction) = zoom_out.draw(
+            self,
+            defaults,
+            zoom_out_layout,
+            cursor_position,
+            &bounds,
+        );
+        (
+            Primitive::Group {
+                primitives: vec![zoom_in_button, zoom_out_button],
+            },
+            mouse_interaction
+                .max(zoom_in_interaction)
+                .max(zoom_out_interaction),
+        )
+    }
 }
 
 //impl<'a, Message, B> Into<Element<'a, Message, Renderer<B>>> for Circle
 //impl<'a, B, Message, Renderer> Into<Element<'a, Message, Renderer>> for MapTile<'a, B, Message, Renderer>
-impl<'a, B, Message, Renderer> Into<Element<'a, Message, Renderer>>
-    for MapTile<'a, B>
+impl<'a, B, Message, Renderer> Into<Element<'a, Message, Renderer>> for MapTile<'a, B>
 where
     B: 'a + Fn(&mut button::State) -> Button<'_, Message, Renderer>,
     Message: 'a + Clone,

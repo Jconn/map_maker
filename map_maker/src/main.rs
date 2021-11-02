@@ -42,7 +42,8 @@ struct MapMaker {
     //the widget handles loading the image tiles
     //
     tiles: [[Vec<u8>; 4]; 4],
-    button_state: button::State,
+    zoom_in_state: button::State,
+    zoom_out_state: button::State,
 }
 
 #[derive(Clone, Debug)]
@@ -121,7 +122,8 @@ impl Application for MapMaker {
             MapMaker {
                 //TODO: add a new function that handles initializing the array
                 tiles: tiles.clone(),
-                button_state: button::State::new(),
+                zoom_in_state: button::State::new(),
+                zoom_out_state: button::State::new(),
             },
             Command::perform(MapMaker::load(request_tiles), MapMaker::process_load),
         )
@@ -151,9 +153,12 @@ impl Application for MapMaker {
     }
 
     fn view(&mut self) -> Element<'_, Message> {
-        //fn zoom_spawner(state: &mut button::State) -> Button<'_, Message> {
-        //    Button::new(state, Text::new("Press Me!")).on_press(Message::ButtonPressed)
-        //}
+        fn zoom_in_spawner(state: &mut button::State) -> Button<'_, Message> {
+            Button::new(state, Text::new("zoom in")).on_press(Message::ButtonPressed)
+        }
+        fn zoom_out_spawner(state: &mut button::State) -> Button<'_, Message> {
+            Button::new(state, Text::new("zoom out")).on_press(Message::ButtonPressed)
+        }
         //let content = map_tile::MapTile::new(self.tiles.clone(), &mut self.button_state, zoom_spawner);
 
         //let content = map_tile::MapTile::new(self.tiles.clone(), &mut self.button_state, |state|-> Button<'_, Message>{
@@ -166,10 +171,10 @@ impl Application for MapMaker {
                 .max_width(2500)
                 .push(map_tile::MapTile::new(
                     self.tiles.clone(),
-                    &mut self.button_state,
-                    |state| {
-                        Button::new(state, Text::new("Press Me!")).on_press(Message::ButtonPressed)
-                    },
+                    &mut self.zoom_in_state,
+                    &mut self.zoom_out_state,
+                    zoom_in_spawner,
+                    zoom_out_spawner,
                 ));
 
         Container::new(content)
