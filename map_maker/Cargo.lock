@@ -1350,6 +1350,7 @@ name = "map_maker"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "futures",
  "iced",
  "iced_graphics",
  "iced_native",

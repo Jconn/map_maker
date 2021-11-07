@@ -6,6 +6,8 @@
 // When compiling natively:
 mod widgets;
 use bytes::Bytes;
+use futures::future::{err, join_all, ok};
+use std::future::Future;
 use std::sync::Arc;
 use std::thread;
 use thiserror::Error;
@@ -87,37 +89,50 @@ enum MyError {
 }
 
 impl MapMaker {
+    async fn get_tile(
+        mut request_tile: Tile,
+        client: Arc<reqwest::Client>,
+    ) -> Result<Tile, MyError> {
+        let (x, y, z) = request_tile.target_url;
+        println!("loading {}, {}, {}", x, y, z);
+        let resp = client
+            .get(format!(
+                "https://stamen-tiles.a.ssl.fastly.net/terrain/{}/{}/{}.png",
+                z, x, y
+            ))
+            .send()
+            .await?
+            .bytes()
+            .await?
+            .to_vec();
+        request_tile.image = resp;
+        Ok(request_tile)
+    }
+
     async fn load(
         client: Arc<reqwest::Client>,
         load_tiles: Vec<Tile>,
     ) -> Result<Vec<Tile>, MyError> {
         let mut return_tiles = load_tiles.clone();
         lazy_static::lazy_static! {static ref STATIC_CLIENT: reqwest::Client = reqwest::Client::new();}
-        println!("me trying load");
-        for mut tile in &mut return_tiles {
-            let (x, y, z) = tile.target_url;
-            println!("loading {}, {}, {}", x, y, z);
-            let resp = client
-                .get(format!(
-                    "https://stamen-tiles.a.ssl.fastly.net/terrain/{}/{}/{}.png",
-                    z, x, y
-                ))
-                .send()
-                .await?
-                .bytes()
-                .await?
-                .to_vec();
 
-            //let resp = reqwest::get(format!(
-            //    "https://stamen-tiles.a.ssl.fastly.net/terrain/{}/{}/{}.png",
-            //    z, x, y
-            //))
-            //.await?
-            //.bytes()
-            //.await?
-            //.to_vec();
-            //println!("load succesful");
-            tile.image = resp;
+        //type FutureType = Box<dyn Future<Output = Result<Tile, MyError> > + Unpin  >;
+        //type FutureType = fn(mut Tile,  Arc<reqwest::Client>) ->Result<Tile, MyError>;
+        //let mut tile_futures: Vec<FutureType> = Vec::new();
+        //for tile in &mut return_tiles {
+        //    tile_futures.push(Box::new(Box::pin(MapMaker::get_tile(tile.clone(), client.clone()))));
+        //}
+
+        let tile_futures = return_tiles
+            .iter_mut()
+            .map(|tile| MapMaker::get_tile(tile.clone(), client.clone()));
+
+        let tile_results = join_all(tile_futures).await;
+
+        for tile_result in tile_results {
+            if let Ok(tile) = tile_result {
+                return_tiles.push(tile);
+            }
         }
         Ok(return_tiles)
     }
