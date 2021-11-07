@@ -15,6 +15,8 @@ use iced::{
     button, executor, slider, Alignment, Application, Button, Column, Command, Container, Element,
     Length, Sandbox, Settings, Slider, Text,
 };
+
+use slippy_map_tiles;
 //fn tokio_runtime_thread(tx: Sender<Bytes>) {
 //    let mut rt = Runtime::new().unwrap();
 //    let handle = rt.spawn(async move {
@@ -44,6 +46,8 @@ struct MapMaker {
     tiles: [[Vec<u8>; 4]; 4],
     zoom_in_state: button::State,
     zoom_out_state: button::State,
+    cur_coords: (f32, f32),
+    zoom_level: u8,
 }
 
 #[derive(Clone, Debug)]
@@ -52,6 +56,7 @@ struct Tile {
     dest_tile: (u32, u32),
     image: Vec<u8>,
 }
+//slippy_map_tiles::lat_lon_to_tile
 impl Tile {
     fn new(target_url: (u32, u32, u32), dest_tile: (u32, u32)) -> Self {
         Self {
@@ -64,7 +69,8 @@ impl Tile {
 #[derive(Clone, Debug)]
 enum Message {
     LoadedImage(Vec<Tile>),
-    ButtonPressed,
+    ZoomIn,
+    ZoomOut,
     ImageLoadFailed,
 }
 
@@ -79,6 +85,7 @@ enum MyError {
 impl MapMaker {
     async fn load(load_tiles: Vec<Tile>) -> Result<Vec<Tile>, MyError> {
         let mut return_tiles = load_tiles.clone();
+        println!("me trying load");
         for mut tile in &mut return_tiles {
             let (x, y, z) = tile.target_url;
             println!("loading {}, {}, {}", x, y, z);
@@ -101,6 +108,29 @@ impl MapMaker {
             Err(err) => Message::ImageLoadFailed,
         }
     }
+
+    fn generate_tiles(&self) -> Vec<Tile> {
+        let target_tile = slippy_map_tiles::lat_lon_to_tile(
+            self.cur_coords.0,
+            self.cur_coords.1,
+            self.zoom_level,
+        );
+        let mut tiles: Vec<Tile> = Vec::new();
+
+        for x in 0..4 {
+            for y in 0..4 {
+                tiles.push(Tile::new(
+                    (
+                        target_tile.0 + x - 2,
+                        target_tile.1 + y - 2,
+                        self.zoom_level as u32,
+                    ),
+                    (x, y),
+                ));
+            }
+        }
+        tiles
+    }
 }
 impl Application for MapMaker {
     type Executor = executor::Default;
@@ -118,12 +148,19 @@ impl Application for MapMaker {
                 request_tiles.push(Tile::new((x, y, 2), (x, y)));
             }
         }
+
+        //println!(
+        //    "my position tile is {}",
+        //    slippy_map_tiles::lat_lon_to_tile(42.473882, -83.473203, 3)
+        //);
         (
             MapMaker {
                 //TODO: add a new function that handles initializing the array
                 tiles: tiles.clone(),
                 zoom_in_state: button::State::new(),
                 zoom_out_state: button::State::new(),
+                cur_coords: (42.473882, -83.473203),
+                zoom_level: 4,
             },
             Command::perform(MapMaker::load(request_tiles), MapMaker::process_load),
         )
@@ -141,8 +178,18 @@ impl Application for MapMaker {
                     self.tiles[x as usize][y as usize] = tile.image;
                 }
             }
-            Message::ButtonPressed => {
-                println!("me button was pressed");
+            Message::ZoomIn => {
+                println!("me zoom in");
+
+                self.zoom_level += 1;
+                let request_tiles = self.generate_tiles();
+                return Command::perform(MapMaker::load(request_tiles), MapMaker::process_load);
+            }
+            Message::ZoomOut => {
+                println!("me zoom out");
+                self.zoom_level -= 1;
+                let request_tiles = self.generate_tiles();
+                return Command::perform(MapMaker::load(request_tiles), MapMaker::process_load);
             }
 
             Message::ImageLoadFailed => {
@@ -154,11 +201,12 @@ impl Application for MapMaker {
 
     fn view(&mut self) -> Element<'_, Message> {
         fn zoom_in_spawner(state: &mut button::State) -> Button<'_, Message> {
-            Button::new(state, Text::new("zoom in")).on_press(Message::ButtonPressed)
+            Button::new(state, Text::new("zoom in")).on_press(Message::ZoomIn)
         }
         fn zoom_out_spawner(state: &mut button::State) -> Button<'_, Message> {
-            Button::new(state, Text::new("zoom out")).on_press(Message::ButtonPressed)
+            Button::new(state, Text::new("zoom out")).on_press(Message::ZoomOut)
         }
+        type ButtonSpawner = fn(&mut button::State) -> Button<'_, Message>;
         //let content = map_tile::MapTile::new(self.tiles.clone(), &mut self.button_state, zoom_spawner);
 
         //let content = map_tile::MapTile::new(self.tiles.clone(), &mut self.button_state, |state|-> Button<'_, Message>{
@@ -173,8 +221,9 @@ impl Application for MapMaker {
                     self.tiles.clone(),
                     &mut self.zoom_in_state,
                     &mut self.zoom_out_state,
-                    zoom_in_spawner,
-                    zoom_out_spawner,
+                    //https://stackoverflow.com/questions/27895946/expected-fn-item-found-a-different-fn-item-when-working-with-function-pointer
+                    zoom_in_spawner as ButtonSpawner,
+                    zoom_out_spawner as ButtonSpawner,
                 ));
 
         Container::new(content)

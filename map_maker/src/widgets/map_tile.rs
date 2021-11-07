@@ -30,6 +30,7 @@ pub struct MapTile<'a, B> {
 
 impl<'a, B, Message, Renderer> Widget<Message, Renderer> for MapTile<'a, B>
 where
+    //B: fn(&mut button::State) -> Button<'_, Message>,
     B: Fn(&mut button::State) -> Button<'_, Message, Renderer>,
     Message: 'a + Clone,
     Renderer: 'a
@@ -441,7 +442,6 @@ where
         zoom_in: &iced_native::Button<'_, Message, Self>,
         zoom_out: &iced_native::Button<'_, Message, Self>,
     ) -> Self::Output {
-
         let bounds = layout.bounds();
         let mouse_interaction = mouse::Interaction::default();
         let mut children = layout.children();
@@ -452,21 +452,11 @@ where
             .next()
             .expect("Native: layout should have zoom out button for MapTile");
 
-        let (zoom_in_button, zoom_in_interaction) = zoom_in.draw(
-            self,
-            defaults,
-            zoom_in_layout,
-            cursor_position,
-            &bounds,
-        );
+        let (zoom_in_button, zoom_in_interaction) =
+            zoom_in.draw(self, defaults, zoom_in_layout, cursor_position, &bounds);
 
-        let (zoom_out_button, zoom_out_interaction) = zoom_out.draw(
-            self,
-            defaults,
-            zoom_out_layout,
-            cursor_position,
-            &bounds,
-        );
+        let (zoom_out_button, zoom_out_interaction) =
+            zoom_out.draw(self, defaults, zoom_out_layout, cursor_position, &bounds);
         (
             Primitive::Group {
                 primitives: vec![zoom_in_button, zoom_out_button],
