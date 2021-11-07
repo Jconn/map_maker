@@ -1353,6 +1353,7 @@ dependencies = [
  "iced",
  "iced_graphics",
  "iced_native",
+ "lazy_static",
  "reqwest",
  "slippy-map-tiles",
  "thiserror",

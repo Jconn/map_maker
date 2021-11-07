@@ -6,10 +6,13 @@
 // When compiling natively:
 mod widgets;
 use bytes::Bytes;
+use std::sync::Arc;
 use std::thread;
 use thiserror::Error;
 use widgets::map_tile;
 use Result;
+
+use lazy_static;
 
 use iced::{
     button, executor, slider, Alignment, Application, Button, Column, Command, Container, Element,
@@ -48,6 +51,7 @@ struct MapMaker {
     zoom_out_state: button::State,
     cur_coords: (f32, f32),
     zoom_level: u8,
+    client: std::sync::Arc<reqwest::Client>,
 }
 
 #[derive(Clone, Debug)]
@@ -83,20 +87,36 @@ enum MyError {
 }
 
 impl MapMaker {
-    async fn load(load_tiles: Vec<Tile>) -> Result<Vec<Tile>, MyError> {
+    async fn load(
+        client: Arc<reqwest::Client>,
+        load_tiles: Vec<Tile>,
+    ) -> Result<Vec<Tile>, MyError> {
         let mut return_tiles = load_tiles.clone();
+        lazy_static::lazy_static! {static ref STATIC_CLIENT: reqwest::Client = reqwest::Client::new();}
         println!("me trying load");
         for mut tile in &mut return_tiles {
             let (x, y, z) = tile.target_url;
             println!("loading {}, {}, {}", x, y, z);
-            let resp = reqwest::get(format!(
-                "https://stamen-tiles.a.ssl.fastly.net/terrain/{}/{}/{}.png",
-                z, x, y
-            ))
-            .await?
-            .bytes()
-            .await?
-            .to_vec();
+            let resp = client
+                .get(format!(
+                    "https://stamen-tiles.a.ssl.fastly.net/terrain/{}/{}/{}.png",
+                    z, x, y
+                ))
+                .send()
+                .await?
+                .bytes()
+                .await?
+                .to_vec();
+
+            //let resp = reqwest::get(format!(
+            //    "https://stamen-tiles.a.ssl.fastly.net/terrain/{}/{}/{}.png",
+            //    z, x, y
+            //))
+            //.await?
+            //.bytes()
+            //.await?
+            //.to_vec();
+            //println!("load succesful");
             tile.image = resp;
         }
         Ok(return_tiles)
@@ -121,8 +141,8 @@ impl MapMaker {
             for y in 0..4 {
                 tiles.push(Tile::new(
                     (
-                        target_tile.0 + x - 2,
-                        target_tile.1 + y - 2,
+                        target_tile.0 + x - 1,
+                        target_tile.1 + y - 1,
                         self.zoom_level as u32,
                     ),
                     (x, y),
@@ -153,6 +173,7 @@ impl Application for MapMaker {
         //    "my position tile is {}",
         //    slippy_map_tiles::lat_lon_to_tile(42.473882, -83.473203, 3)
         //);
+        let client = std::sync::Arc::new(reqwest::Client::new());
         (
             MapMaker {
                 //TODO: add a new function that handles initializing the array
@@ -161,8 +182,12 @@ impl Application for MapMaker {
                 zoom_out_state: button::State::new(),
                 cur_coords: (42.473882, -83.473203),
                 zoom_level: 4,
+                client: client.clone(),
             },
-            Command::perform(MapMaker::load(request_tiles), MapMaker::process_load),
+            Command::perform(
+                MapMaker::load(client, request_tiles),
+                MapMaker::process_load,
+            ),
         )
     }
 
@@ -183,13 +208,19 @@ impl Application for MapMaker {
 
                 self.zoom_level += 1;
                 let request_tiles = self.generate_tiles();
-                return Command::perform(MapMaker::load(request_tiles), MapMaker::process_load);
+                return Command::perform(
+                    MapMaker::load(self.client.clone(), request_tiles),
+                    MapMaker::process_load,
+                );
             }
             Message::ZoomOut => {
                 println!("me zoom out");
                 self.zoom_level -= 1;
                 let request_tiles = self.generate_tiles();
-                return Command::perform(MapMaker::load(request_tiles), MapMaker::process_load);
+                return Command::perform(
+                    MapMaker::load(self.client.clone(), request_tiles),
+                    MapMaker::process_load,
+                );
             }
 
             Message::ImageLoadFailed => {
