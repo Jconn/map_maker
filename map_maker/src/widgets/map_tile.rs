@@ -68,20 +68,6 @@ where
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
             | Event::Touch(touch::Event::FingerPressed { .. }) => {
                 let is_clicked = bounds.contains(cursor_position);
-                println!(
-                    "testing bounds {} {}, {} {} against {} {} ",
-                    bounds.x,
-                    bounds.y,
-                    bounds.width + bounds.x,
-                    bounds.height + bounds.y,
-                    cursor_position.x,
-                    cursor_position.y
-                );
-                if is_clicked {
-                    println!("we clicking");
-                } else {
-                    println!("we touching");
-                }
                 return event::Status::Captured;
             }
             _ => event::Status::Ignored,
