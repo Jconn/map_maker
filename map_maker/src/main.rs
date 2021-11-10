@@ -94,7 +94,6 @@ impl MapMaker {
         client: Arc<reqwest::Client>,
     ) -> Result<Tile, MyError> {
         let (x, y, z) = request_tile.target_url;
-        println!("loading {}, {}, {}", x, y, z);
         let resp = client
             .get(format!(
                 "https://stamen-tiles.a.ssl.fastly.net/terrain/{}/{}/{}.png",
@@ -114,7 +113,6 @@ impl MapMaker {
         load_tiles: Vec<Tile>,
     ) -> Result<Vec<Tile>, MyError> {
         let mut return_tiles = load_tiles.clone();
-        lazy_static::lazy_static! {static ref STATIC_CLIENT: reqwest::Client = reqwest::Client::new();}
 
         //type FutureType = Box<dyn Future<Output = Result<Tile, MyError> > + Unpin  >;
         //type FutureType = fn(mut Tile,  Arc<reqwest::Client>) ->Result<Tile, MyError>;
@@ -258,21 +256,15 @@ impl Application for MapMaker {
         //let content = map_tile::MapTile::new(self.tiles.clone(), &mut self.button_state, |state|-> Button<'_, Message>{
         //    Button::new(state, Text::new("Press Me!")).on_press(Message::ButtonPressed)
         //});
-        let content =
-            Column::new()
-                .padding(20)
-                .spacing(20)
-                .max_width(2500)
-                .push(map_tile::MapTile::new(
-                    self.tiles.clone(),
-                    &mut self.zoom_in_state,
-                    &mut self.zoom_out_state,
-                    //https://stackoverflow.com/questions/27895946/expected-fn-item-found-a-different-fn-item-when-working-with-function-pointer
-                    zoom_in_spawner as ButtonSpawner,
-                    zoom_out_spawner as ButtonSpawner,
-                ));
 
-        Container::new(content)
+        Container::new(map_tile::MapTile::new(
+                self.tiles.clone(),
+                &mut self.zoom_in_state,
+                &mut self.zoom_out_state,
+                //https://stackoverflow.com/questions/27895946/expected-fn-item-found-a-different-fn-item-when-working-with-function-pointer
+                zoom_in_spawner as ButtonSpawner,
+                zoom_out_spawner as ButtonSpawner,
+            ))
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x()

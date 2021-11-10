@@ -54,12 +54,19 @@ where
         let limits = Limits::new(Size::ZERO, bounds);
         let zoom_in_layout = self.zoom_in.layout(renderer, &limits);
         let mut zoom_out_layout = self.zoom_out.layout(renderer, &limits);
-        zoom_out_layout.move_to(Point::new(128.0,0.0));
+        let zoom_in_bounds = zoom_in_layout.bounds();
+        let zoom_out_bounds = zoom_out_layout.bounds();
 
+        zoom_out_layout.move_to(Point::new(0.0, zoom_in_bounds.height + 5.0));
+        let stacked_height = zoom_out_bounds.height + zoom_in_bounds.height;
         let mut node = layout::Node::with_children(
-            Size::new(512.0, 512.0),
+            Size::new(
+                f32::max(zoom_in_bounds.width, zoom_out_bounds.width),
+                stacked_height,
+            ),
             vec![zoom_in_layout, zoom_out_layout],
         );
+        node.move_to(position);
         node
     }
 

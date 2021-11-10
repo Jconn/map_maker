@@ -14,8 +14,8 @@ use iced_graphics::backend::{self, Backend};
 use iced_graphics::{Defaults, Primitive};
 use iced_native::event;
 use iced_native::{
-    button, layout, layout::Limits, mouse, overlay, Background, Button, Clipboard, Color, Element,
-    Event, Hasher, Layout, Length, Overlay, Point, Rectangle, Size, Text, Vector, Widget,
+    button, layout, layout::Limits, mouse, overlay, touch, Background, Button, Clipboard, Color,
+    Element, Event, Hasher, Layout, Length, Overlay, Point, Rectangle, Size, Text, Vector, Widget,
 };
 
 pub struct MapTile<'a, B> {
@@ -41,44 +41,17 @@ where
         + iced_native::button::Renderer,
 {
     fn width(&self) -> Length {
-        self.width
+        Length::Shrink
     }
 
     fn height(&self) -> Length {
-        self.height
+        Length::Shrink
     }
 
     fn layout(&self, renderer: &Renderer, limits: &layout::Limits) -> layout::Node {
         //let (width, height) = renderer.dimensions(&self.handle);
-        let (width, height) = (256 * 16, 256 * 16);
-
-        let mut size = limits
-            .width(self.width)
-            .height(self.height)
-            .resolve(Size::new(width as f32, height as f32));
-
-        let expansion_size = if height > width {
-            self.width
-        } else {
-            self.height
-        };
-
-        // Only calculate viewport sizes if the images are constrained to a limited space.
-        // If they are Fill|Portion let them expand within their alotted space.
-        match expansion_size {
-            Length::Shrink | Length::Units(_) => {
-                let aspect_ratio = width as f32 / height as f32;
-                let viewport_aspect_ratio = size.width / size.height;
-                if viewport_aspect_ratio > aspect_ratio {
-                    size.width = width as f32 * size.height / height as f32;
-                } else {
-                    size.height = height as f32 * size.width / width as f32;
-                }
-            }
-            Length::Fill | Length::FillPortion(_) => {}
-        }
-
-        layout::Node::new(size)
+        let (width, height) = (256.0 * 16.0, 256.0 * 16.0);
+        layout::Node::new(limits.resolve(Size::new(width, height)))
     }
     fn on_event(
         &mut self,
@@ -90,9 +63,27 @@ where
         _messages: &mut Vec<Message>,
     ) -> event::Status {
         let bounds = layout.bounds();
-        let is_mouse_over = bounds.contains(cursor_position);
 
         match event {
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
+            | Event::Touch(touch::Event::FingerPressed { .. }) => {
+                let is_clicked = bounds.contains(cursor_position);
+                println!(
+                    "testing bounds {} {}, {} {} against {} {} ",
+                    bounds.x,
+                    bounds.y,
+                    bounds.width + bounds.x,
+                    bounds.height + bounds.y,
+                    cursor_position.x,
+                    cursor_position.y
+                );
+                if is_clicked {
+                    println!("we clicking");
+                } else {
+                    println!("we touching");
+                }
+                return event::Status::Captured;
+            }
             _ => event::Status::Ignored,
         }
     }
@@ -136,12 +127,13 @@ where
     }
 
     /// Returns the overlay of the [`Widget`], if there is any.
-    fn overlay(&mut self, _layout: Layout<'_>) -> Option<overlay::Element<'_, Message, Renderer>> {
-        let position = Point::default();
+    fn overlay(&mut self, layout: Layout<'_>) -> Option<overlay::Element<'_, Message, Renderer>> {
         let zoom_in = (self.zoom_in)(&mut self.zoom_in_state);
         let zoom_out = (self.zoom_out)(&mut self.zoom_out_state);
+        let edge_x = layout.bounds().x + layout.bounds().width - 125.0;
+        let edge_y = layout.bounds().y + layout.bounds().height - 125.0;
         Some(
-            TileOverlay::new(zoom_in, zoom_out).overlay(Point::new(0.0, 0.0)),
+            TileOverlay::new(zoom_in, zoom_out).overlay(Point::new(f32::min(edge_x, 1024.0-125.0), f32::min(edge_y, 1024.0-125.0))),
             //overlay::Element::new(position, Box::new(TileOverlay::new().overlay()))
             //    .overlay(Point::new(0.0, 0.0)),
         )
@@ -291,18 +283,6 @@ pub trait Renderer:
         tile_handles: &[[Option<image::Handle>; 4]; 4],
     ) -> Self::Output;
 
-    /// Decorates a the list of options of a [`MapTile`].
-    ///
-    /// This method can be used to draw a background for the [`Menu`].
-    fn decorate(
-        &mut self,
-        bounds: Rectangle,
-        //cursor_position: Point,
-        //style: &<Self as Renderer>::Style,
-        //primitive: Self::Output,
-        tile_handles: &[[Option<image::Handle>; 4]; 4],
-    ) -> Self::Output;
-
     fn overlay_draw<Message: Clone>(
         &mut self,
         defaults: &Self::Defaults,
@@ -328,59 +308,6 @@ impl<B> Renderer for iced_graphics::Renderer<B>
 where
     B: Backend + backend::Image + backend::Text + backend::Backend,
 {
-    fn decorate(
-        &mut self,
-        bounds: Rectangle,
-        //handle: image::Handle,
-        //
-        tile_handles: &[[Option<image::Handle>; 4]; 4],
-    ) -> Self::Output {
-        println!("hitting decorate");
-        let mut primitives_vec: Vec<Primitive> = Vec::new();
-
-        for (idx_x, x) in tile_handles.iter().enumerate() {
-            for (idx_y, y) in x.iter().enumerate() {
-                if let Some(tile) = &tile_handles[idx_x][idx_y] {
-                    let top_left = Vector::new(idx_x as f32 * 256.0, idx_y as f32 * 256.0);
-
-                    let new_clip = Primitive::Clip {
-                        bounds,
-                        content: Box::new(Primitive::Translate {
-                            //translation,
-                            translation: top_left,
-                            content: Box::new(Primitive::Image {
-                                handle: tile.clone(),
-                                //bounds: Rectangle {
-                                //    x: 0.0,
-                                //    y: 0.0,
-                                //    ..Rectangle::with_size(image_size)
-                                //},
-                                bounds: Rectangle {
-                                    x: (idx_x * 256) as f32,
-                                    y: (idx_y * 256) as f32,
-                                    width: 256.0,
-                                    height: 256.0,
-                                },
-                            }),
-                        }),
-                        offset: Vector::new((idx_x * 256) as u32, (idx_y * 256) as u32),
-                    };
-                    primitives_vec.push(new_clip);
-                }
-                //self.tile_handles[idx_x][idx_y] = Some(image::Handle::from_memory(tiles[idx_x][idx_y]));
-            }
-        }
-        (
-            {
-                //
-                Primitive::Group {
-                    primitives: primitives_vec,
-                }
-            },
-            { mouse::Interaction::Idle },
-        )
-    }
-
     fn draw(
         &mut self,
         bounds: Rectangle,
@@ -395,34 +322,41 @@ where
             for (idx_y, y) in x.iter().enumerate() {
                 if let Some(tile) = &tile_handles[idx_x][idx_y] {
                     let top_left = Vector::new(idx_x as f32 * 256.0, idx_y as f32 * 256.0);
+                    //let top_left = Vector::new(idx_x as f32 * 0.0, idx_y as f32 * 0.0);
 
-                    let new_clip = Primitive::Clip {
-                        bounds,
-                        content: Box::new(Primitive::Translate {
-                            //translation,
-                            translation: top_left,
-                            content: Box::new(Primitive::Image {
-                                handle: tile.clone(),
-                                //bounds: Rectangle {
-                                //    x: 0.0,
-                                //    y: 0.0,
-                                //    ..Rectangle::with_size(image_size)
-                                //},
-                                bounds: Rectangle {
-                                    x: (idx_x * 256) as f32,
-                                    y: (idx_y * 256) as f32,
-                                    width: 256.0,
-                                    height: 256.0,
-                                },
-                            }),
-                        }),
-                        offset: Vector::new((idx_x * 256) as u32, (idx_y * 256) as u32),
+                    let new_clip = Primitive::Image {
+                        handle: tile.clone(),
+                        //bounds: Rectangle {
+                        //    x: 0.0,
+                        //    y: 0.0,
+                        //    ..Rectangle::with_size(image_size)
+                        //},
+                        bounds: Rectangle {
+                            x: (idx_x * 256) as f32,
+                            y: (idx_y * 256) as f32,
+                            width: 256.0,
+                            height: 256.0,
+                        },
                     };
                     primitives_vec.push(new_clip);
                 }
                 //self.tile_handles[idx_x][idx_y] = Some(image::Handle::from_memory(tiles[idx_x][idx_y]));
             }
         }
+
+        //changing the quad here changes nothing
+        //let new_quad = Primitive::Quad {
+        //    bounds: Rectangle {
+        //        x: (0 * 256) as f32,
+        //        y: (0 * 256) as f32,
+        //        width: 256.0,
+        //        height: 256.0,
+        //    },
+        //    background: Background::Color(Color::BLACK),
+        //    border_radius: 40.0,
+        //    border_width: 0.0,
+        //    border_color: Color::TRANSPARENT,
+        //};
         (
             {
                 //
@@ -430,7 +364,8 @@ where
                     primitives: primitives_vec,
                 }
             },
-            { mouse::Interaction::Idle },
+            { mouse::Interaction::Grab },
+            //{ mouse::Interaction::Idle },
         )
     }
 
