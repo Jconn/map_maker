@@ -1,4 +1,4 @@
-use bytes::{BufMut, Bytes, BytesMut};
+//use bytes::{BufMut, Bytes, BytesMut};
 // For now, to implement a custom native widget you will need to add
 // `iced_native` and `iced_wgpu` to your dependencies.
 //
@@ -11,19 +11,25 @@ use bytes::{BufMut, Bytes, BytesMut};
 use crate::widgets::map_tile_overlay::TileOverlay;
 use iced::image;
 use iced_graphics::backend::{self, Backend};
-use iced_graphics::{Defaults, Primitive};
+use iced_graphics::Primitive;
 use iced_native::event;
+use iced_native::mouse::click;
 use iced_native::{
-    button, layout, layout::Limits, mouse, overlay, touch, Background, Button, Clipboard, Color,
-    Element, Event, Hasher, Layout, Length, Overlay, Point, Rectangle, Size, Text, Vector, Widget,
+    button, layout, mouse, overlay, touch, Button, Clipboard, Element, Event, Hasher, Layout,
+    Length, Point, Rectangle, Size, Vector, Widget,
 };
 
+use log;
+
+pub const TILE_DIMENSION: usize = 5;
+
 pub struct MapTile<'a, B> {
+    state: &'a mut State,
     zoom_in_state: &'a mut button::State,
     zoom_out_state: &'a mut button::State,
     zoom_in: B,
     zoom_out: B,
-    tile_handles: [[Option<image::Handle>; 4]; 4],
+    tile_handles: [[Option<image::Handle>; TILE_DIMENSION]; TILE_DIMENSION],
     width: Length,
     height: Length,
 }
@@ -50,7 +56,7 @@ where
 
     fn layout(&self, renderer: &Renderer, limits: &layout::Limits) -> layout::Node {
         //let (width, height) = renderer.dimensions(&self.handle);
-        let (width, height) = (256.0 * 16.0, 256.0 * 16.0);
+        let (width, height) = (256.0 * 3.0, 256.0 * 3.0);
         layout::Node::new(limits.resolve(Size::new(width, height)))
     }
     fn on_event(
@@ -68,10 +74,48 @@ where
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
             | Event::Touch(touch::Event::FingerPressed { .. }) => {
                 let is_clicked = bounds.contains(cursor_position);
-                return event::Status::Captured;
+                self.state.is_focused = is_clicked;
+                let click = mouse::Click::new(cursor_position, self.state.last_click);
+
+                match click.kind() {
+                    click::Kind::Single => {
+                        self.state.is_dragging = true;
+                    }
+                    _ => {}
+                }
+
+                self.state.last_click = Some(click);
             }
-            _ => event::Status::Ignored,
+            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
+            | Event::Touch(touch::Event::FingerLifted { .. })
+            | Event::Touch(touch::Event::FingerLost { .. }) => {
+                self.state.is_dragging = false;
+            }
+            Event::Mouse(mouse::Event::CursorMoved { position })
+            | Event::Touch(touch::Event::FingerMoved { position, .. }) => {
+                if self.state.is_dragging {
+                    self.state.velocity = (
+                        position.x - self.state.last_position.0,
+                        position.y - self.state.last_position.1,
+                    );
+
+                    log::trace!(
+                        "vel is {}, {}",
+                        self.state.velocity.0, self.state.velocity.1
+                    );
+                }
+                else{
+                    self.state.velocity =(0.0,0.0);
+                }
+                self.state.last_position = (position.x, position.y);
+                self.state.load_pixel.0 += -self.state.velocity.0;
+                self.state.load_pixel.1 += -self.state.velocity.1;
+            }
+
+            _ => {}
         }
+
+        event::Status::Captured
     }
 
     fn draw(
@@ -101,7 +145,13 @@ where
             let image_top_left = Vector::new(0.0, 0.0);
             image_top_left
         };
-        self::Renderer::draw(renderer, bounds, translation, &self.tile_handles)
+        self::Renderer::draw(
+            renderer,
+            bounds,
+            translation,
+            &self.tile_handles,
+            self.state.load_pixel,
+        )
         //renderer.draw(self.handle.clone(), layout)
     }
 
@@ -119,55 +169,58 @@ where
         let edge_x = layout.bounds().x + layout.bounds().width - 125.0;
         let edge_y = layout.bounds().y + layout.bounds().height - 125.0;
         Some(
-            TileOverlay::new(zoom_in, zoom_out).overlay(Point::new(f32::min(edge_x, 1024.0-125.0), f32::min(edge_y, 1024.0-125.0))),
+            TileOverlay::new(zoom_in, zoom_out).overlay(Point::new(
+                f32::min(edge_x, 256.0 * 3.0 - 125.0),
+                f32::min(edge_y, 256.0 * 3.0 - 125.0),
+            )),
             //overlay::Element::new(position, Box::new(TileOverlay::new().overlay()))
             //    .overlay(Point::new(0.0, 0.0)),
         )
     }
 }
 
-/// The local state of a [`Viewer`].
-#[derive(Debug, Clone, Copy)]
+/// The state of a [`MapTile`].
+#[derive(Debug, Default, Clone, Copy)]
 pub struct State {
-    scale: f32,
-    starting_offset: Vector,
-    current_offset: Vector,
-    cursor_grabbed_at: Option<Point>,
-}
-
-impl Default for State {
-    fn default() -> Self {
-        Self {
-            scale: 1.0,
-            starting_offset: Vector::default(),
-            current_offset: Vector::default(),
-            cursor_grabbed_at: None,
-        }
-    }
+    is_focused: bool,
+    is_dragging: bool,
+    last_position: (f32, f32),
+    pub velocity: (f32, f32),
+    load_pixel: (f32, f32),
+    last_click: Option<mouse::Click>,
 }
 
 impl State {
-    /// Creates a new [`State`].
-    pub fn new() -> Self {
-        State::default()
+    /// Creates a new [`State`], representing an unfocused [`TextInput`].
+    pub fn new(
+        is_dragging: bool,
+        last_position: (f32, f32),
+        last_click: Option<mouse::Click>,
+        load_pixel: (f32, f32),
+    ) -> Self {
+        Self {
+            is_focused: false,
+            is_dragging,
+            last_position,
+            velocity: (0.0, 0.0),
+            load_pixel,
+            last_click,
+        }
     }
 
-    /// Returns the current offset of the [`State`], given the bounds
-    /// of the [`Viewer`] and its image.
-    fn offset(&self, bounds: Rectangle, image_size: Size) -> Vector {
-        let hidden_width = (image_size.width - bounds.width / 2.0).max(0.0).round();
-
-        let hidden_height = (image_size.height - bounds.height / 2.0).max(0.0).round();
-
-        Vector::new(
-            self.current_offset.x.min(hidden_width).max(-hidden_width),
-            self.current_offset.y.min(hidden_height).max(-hidden_height),
-        )
+    /// Returns whether the [`TextInput`] is currently focused or not.
+    pub fn is_focused(&self) -> bool {
+        self.is_focused
     }
 
-    /// Returns if the cursor is currently grabbed by the [`Viewer`].
-    pub fn is_cursor_grabbed(&self) -> bool {
-        self.cursor_grabbed_at.is_some()
+    /// Focuses the [`TextInput`].
+    pub fn focus(&mut self) {
+        self.is_focused = true;
+    }
+
+    /// Unfocuses the [`TextInput`].
+    pub fn unfocus(&mut self) {
+        self.is_focused = false;
     }
 }
 
@@ -178,14 +231,15 @@ where
     B: Fn(&mut button::State) -> Button<'_, Message, Renderer>,
 {
     pub fn new(
-        tiles: [[Vec<u8>; 4]; 4],
+        state: &'a mut State,
+        tiles: [[Vec<u8>; TILE_DIMENSION]; TILE_DIMENSION],
         zoom_in_state: &'a mut button::State,
         zoom_out_state: &'a mut button::State,
         zoom_in: B,
         zoom_out: B,
     ) -> Self {
-        //let mut tile_handles: [[Option<image::Handle>; 4]; 4] = [[None; 4]; 4];
-        let mut tile_handles: [[Option<image::Handle>; 4]; 4] = Default::default();
+        let mut tile_handles: [[Option<image::Handle>; TILE_DIMENSION]; TILE_DIMENSION] =
+            Default::default();
 
         for (idx_x, x) in tiles.iter().enumerate() {
             for (idx_y, y) in x.iter().enumerate() {
@@ -196,6 +250,7 @@ where
 
         //let tile_handles = image::Handle::from_memory(bytes.to_vec());
         Self {
+            state,
             zoom_in_state,
             zoom_out_state,
             zoom_in,
@@ -266,7 +321,8 @@ pub trait Renderer:
         bounds: Rectangle,
         translation: Vector,
         //handle: image::Handle,
-        tile_handles: &[[Option<image::Handle>; 4]; 4],
+        tile_handles: &[[Option<image::Handle>; TILE_DIMENSION]; TILE_DIMENSION],
+        load_point: (f32, f32),
     ) -> Self::Output;
 
     fn overlay_draw<Message: Clone>(
@@ -300,16 +356,96 @@ where
         translation: Vector,
         //handle: image::Handle,
         //
-        tile_handles: &[[Option<image::Handle>; 4]; 4],
+        tile_handles: &[[Option<image::Handle>; TILE_DIMENSION]; TILE_DIMENSION],
+        load_point: (f32, f32),
     ) -> Self::Output {
         let mut primitives_vec: Vec<Primitive> = Vec::new();
-
+        log::info!("load point {}, {}",load_point.0, load_point.1);
+        let load_point = (load_point.0/256.0, load_point.1/256.0);
+        let load_top_left = ((load_point.0 - 1.5) * 256.0, (load_point.1 - 1.5) * 256.0);
+        let load_bottom_right = ((load_point.0 + 1.5) * 256.0, (load_point.1 + 1.5) * 256.0);
         for (idx_x, x) in tile_handles.iter().enumerate() {
             for (idx_y, y) in x.iter().enumerate() {
+                let handle_top_left = ((idx_x as f32 - 2.5) * 256.0, (idx_y as f32 - 2.5) * 256.0);
+                let handle_bottom_right =
+                    ((idx_x as f32 - 1.5) * 256.0, (idx_y as f32 - 1.5) * 256.0);
                 if let Some(tile) = &tile_handles[idx_x][idx_y] {
-                    let top_left = Vector::new(idx_x as f32 * 256.0, idx_y as f32 * 256.0);
                     //let top_left = Vector::new(idx_x as f32 * 0.0, idx_y as f32 * 0.0);
+                    let mut x = load_top_left.0 - handle_top_left.0;
+                    let mut y = load_top_left.1 - handle_top_left.1;
 
+                    let mut width = handle_top_left.0 - load_bottom_right.0;
+                    let mut height = handle_top_left.1 - load_bottom_right.1;
+                    log::debug!(
+                        "comparing {},{} - {},{} to {},{} - {},{}",
+                        load_top_left.0,
+                        load_top_left.1,
+                        load_bottom_right.0,
+                        load_bottom_right.1,
+                        handle_top_left.0,
+                        handle_top_left.1,
+                        handle_bottom_right.0,
+                        handle_bottom_right.1
+                    );
+
+                    log::debug!("raw vals {}, {}, {}, {}", x, y, width, height);
+                    if handle_bottom_right.0 <= load_top_left.0
+                        || handle_bottom_right.1 <= load_top_left.1
+                    {
+                        log::debug!("skipping tile {}, {}", idx_x, idx_y);
+                        continue;
+                    }
+                    if handle_top_left.0 >= load_bottom_right.0
+                        || handle_top_left.1 >= load_bottom_right.1
+                    {
+                        log::debug!("skipping tile {}, {}", idx_x, idx_y);
+                        continue;
+                    }
+
+                    //if the top left handle is before the top left load, for a dimension, then
+                    //that dimension is less than 256 and x/y compensate
+                    //if the bottom right handle is greater than the bottom right load, then
+                    //that dimension is less than 256 and x/y remain 0
+                    //otherwise, the entire tile is swallowed
+
+                    if handle_top_left.0 < load_top_left.0 {
+                        width = handle_bottom_right.0 - load_top_left.0;
+                        x = 256. - width;
+                    } else if handle_bottom_right.0 > load_bottom_right.0 {
+                        width = load_bottom_right.0 - handle_top_left.0;
+                        x = 0.0;
+                    } else {
+                        width = 256.0;
+                        x = 0.0;
+                    }
+
+                    if handle_top_left.1 < load_top_left.1 {
+                        height = handle_bottom_right.1 - load_top_left.1;
+                        y = 256. - height;
+                    } else if handle_bottom_right.1 > load_bottom_right.1 {
+                        height = load_bottom_right.1 - handle_top_left.1;
+                        y = 0.0;
+                    } else {
+                        height = 256.0;
+                        y = 0.0;
+                    }
+
+                    let pixel_x = handle_top_left.0 - load_top_left.0 as f32 + x;
+                    let pixel_y = handle_top_left.1 - load_top_left.1 as f32 + y;
+
+                    log::info!(
+                        "putting tile {}, {} at {}, {}: {}x{}",
+                        idx_x,
+                        idx_y,
+                        pixel_x,
+                        pixel_y,
+                        width,
+                        height
+                    );
+                    //x = 0.0;
+                    //y =0.0;
+                    //width = 256.0;
+                    //height=256.0;
                     let new_clip = Primitive::Image {
                         handle: tile.clone(),
                         //bounds: Rectangle {
@@ -318,10 +454,10 @@ where
                         //    ..Rectangle::with_size(image_size)
                         //},
                         bounds: Rectangle {
-                            x: (idx_x * 256) as f32,
-                            y: (idx_y * 256) as f32,
-                            width: 256.0,
-                            height: 256.0,
+                            x: pixel_x,
+                            y: pixel_y,
+                            width,
+                            height,
                         },
                     };
                     primitives_vec.push(new_clip);

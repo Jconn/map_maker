@@ -5,20 +5,20 @@
 
 // When compiling natively:
 mod widgets;
-use bytes::Bytes;
-use futures::future::{err, join_all, ok};
-use std::future::Future;
+use futures::future::join_all;
+use log;
 use std::sync::Arc;
-use std::thread;
 use thiserror::Error;
 use widgets::map_tile;
 use Result;
 
-use lazy_static;
+use env_logger::{Builder, Target};
+
+pub const LOAD_TILE_DIMENSION: usize = 5;
+use crate::widgets::map_tile::TILE_DIMENSION;
 
 use iced::{
-    button, executor, slider, Alignment, Application, Button, Column, Command, Container, Element,
-    Length, Sandbox, Settings, Slider, Text,
+    button, executor, Application, Button, Command, Container, Element, Length, Settings, Text,
 };
 
 use slippy_map_tiles;
@@ -37,6 +37,12 @@ use slippy_map_tiles;
 pub fn main() -> iced::Result {
     //let (tx, mut rx) = mpsc::channel(100);
     //let tokio_thread_handle = thread::spawn(|| tokio_runtime_thread(tx));
+    //
+
+    let mut builder = Builder::from_default_env();
+    builder.target(Target::Stdout);
+    builder.filter(Some("map_maker"),log::LevelFilter::Info);
+    builder.init();
     let result = MapMaker::run(Settings::default());
     //tokio_thread_handle.join().unwrap();
     result
@@ -48,12 +54,14 @@ struct MapMaker {
     //each vector is an image tile
     //the widget handles loading the image tiles
     //
-    tiles: [[Vec<u8>; 4]; 4],
+    tiles: [[Vec<u8>; LOAD_TILE_DIMENSION]; LOAD_TILE_DIMENSION],
     zoom_in_state: button::State,
     zoom_out_state: button::State,
     cur_coords: (f32, f32),
+    load_pixel: (f32, f32),
     zoom_level: u8,
     client: std::sync::Arc<reqwest::Client>,
+    tile_state: map_tile::State,
 }
 
 #[derive(Clone, Debug)]
@@ -89,6 +97,8 @@ enum MyError {
 }
 
 impl MapMaker {
+    //tile_handles: [[Option<image::Handle>; TILE_DIMENSION]; TILE_DIMENSION],
+
     async fn get_tile(
         mut request_tile: Tile,
         client: Arc<reqwest::Client>,
@@ -150,15 +160,15 @@ impl MapMaker {
         );
         let mut tiles: Vec<Tile> = Vec::new();
 
-        for x in 0..4 {
-            for y in 0..4 {
+        for x in 0..LOAD_TILE_DIMENSION {
+            for y in 0..LOAD_TILE_DIMENSION {
                 tiles.push(Tile::new(
                     (
-                        target_tile.0 + x - 1,
-                        target_tile.1 + y - 1,
+                        target_tile.0 + x as u32 - 1,
+                        target_tile.1 + y as u32 - 1,
                         self.zoom_level as u32,
                     ),
-                    (x, y),
+                    (x as u32, y as u32),
                 ));
             }
         }
@@ -173,12 +183,12 @@ impl Application for MapMaker {
     fn new(_flags: ()) -> (Self, Command<Message>) {
         // strange syntax
         //let tiles: [[Vec<u8>; 4]; 4] = [[Vec::new(); 4]; 4];
-        let tiles: [[Vec<u8>; 4]; 4] = Default::default();
-
+        let tiles: [[Vec<u8>; LOAD_TILE_DIMENSION]; LOAD_TILE_DIMENSION] = Default::default();
+        let zoom_level:u8 = 4;
         let mut request_tiles: Vec<Tile> = Vec::new();
-        for x in 0..4 {
-            for y in 0..4 {
-                request_tiles.push(Tile::new((x, y, 2), (x, y)));
+        for x in 0..LOAD_TILE_DIMENSION {
+            for y in 0..LOAD_TILE_DIMENSION {
+                request_tiles.push(Tile::new((x as u32, y as u32, zoom_level as u32), (x as u32, y as u32)));
             }
         }
 
@@ -194,8 +204,10 @@ impl Application for MapMaker {
                 zoom_in_state: button::State::new(),
                 zoom_out_state: button::State::new(),
                 cur_coords: (42.473882, -83.473203),
-                zoom_level: 4,
+                zoom_level,
+                load_pixel: (0.0, 0.0),
                 client: client.clone(),
+                tile_state: map_tile::State::default(),
             },
             Command::perform(
                 MapMaker::load(client, request_tiles),
@@ -217,7 +229,7 @@ impl Application for MapMaker {
                 }
             }
             Message::ZoomIn => {
-                println!("me zoom in");
+                log::info!("me zoom in");
 
                 self.zoom_level += 1;
                 let request_tiles = self.generate_tiles();
@@ -258,17 +270,18 @@ impl Application for MapMaker {
         //});
 
         Container::new(map_tile::MapTile::new(
-                self.tiles.clone(),
-                &mut self.zoom_in_state,
-                &mut self.zoom_out_state,
-                //https://stackoverflow.com/questions/27895946/expected-fn-item-found-a-different-fn-item-when-working-with-function-pointer
-                zoom_in_spawner as ButtonSpawner,
-                zoom_out_spawner as ButtonSpawner,
-            ))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x()
-            .center_y()
-            .into()
+            &mut self.tile_state,
+            self.tiles.clone(),
+            &mut self.zoom_in_state,
+            &mut self.zoom_out_state,
+            //https://stackoverflow.com/questions/27895946/expected-fn-item-found-a-different-fn-item-when-working-with-function-pointer
+            zoom_in_spawner as ButtonSpawner,
+            zoom_out_spawner as ButtonSpawner,
+        ))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x()
+        .center_y()
+        .into()
     }
 }
