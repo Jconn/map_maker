@@ -41,7 +41,7 @@ pub fn main() -> iced::Result {
 
     let mut builder = Builder::from_default_env();
     builder.target(Target::Stdout);
-    builder.filter(Some("map_maker"),log::LevelFilter::Info);
+    builder.filter(Some("map_maker"), log::LevelFilter::Info);
     builder.init();
     let result = MapMaker::run(Settings::default());
     //tokio_thread_handle.join().unwrap();
@@ -86,6 +86,7 @@ enum Message {
     ZoomIn,
     ZoomOut,
     ImageLoadFailed,
+    CenterPosition,
 }
 
 #[derive(Debug, Error)]
@@ -174,6 +175,39 @@ impl MapMaker {
         }
         tiles
     }
+
+    fn shift_tiles(
+        tiles: &mut [[Vec<u8>; LOAD_TILE_DIMENSION]; LOAD_TILE_DIMENSION],
+        row: i32,
+        col: i32,
+    ) {
+        fn rotate_col(
+            tiles: &mut [[Vec<u8>; LOAD_TILE_DIMENSION]; LOAD_TILE_DIMENSION],
+            col_rot: i32,
+        ) {
+            for t_row in tiles {
+                if col_rot > 0 {
+                    t_row.rotate_right(col_rot as usize);
+                    t_row[0..col_rot as usize].fill(Default::default());
+                } else if col_rot < 0 {
+                    t_row.rotate_left(-col_rot as usize);
+                    t_row[(LOAD_TILE_DIMENSION as i32 + col_rot) as usize
+                        ..LOAD_TILE_DIMENSION as usize]
+                        .fill(Default::default());
+                }
+            }
+        }
+        if row > 0 {
+            tiles.rotate_right(row as usize);
+            tiles[0..row as usize].fill(Default::default());
+        } else if row < 0 {
+            tiles.rotate_left(-row as usize);
+            tiles[(LOAD_TILE_DIMENSION as i32 + row) as usize..LOAD_TILE_DIMENSION]
+                .fill(Default::default());
+        }
+
+        rotate_col(tiles, col);
+    }
 }
 impl Application for MapMaker {
     type Executor = executor::Default;
@@ -184,11 +218,14 @@ impl Application for MapMaker {
         // strange syntax
         //let tiles: [[Vec<u8>; 4]; 4] = [[Vec::new(); 4]; 4];
         let tiles: [[Vec<u8>; LOAD_TILE_DIMENSION]; LOAD_TILE_DIMENSION] = Default::default();
-        let zoom_level:u8 = 4;
+        let zoom_level: u8 = 4;
         let mut request_tiles: Vec<Tile> = Vec::new();
         for x in 0..LOAD_TILE_DIMENSION {
             for y in 0..LOAD_TILE_DIMENSION {
-                request_tiles.push(Tile::new((x as u32, y as u32, zoom_level as u32), (x as u32, y as u32)));
+                request_tiles.push(Tile::new(
+                    (x as u32, y as u32, zoom_level as u32),
+                    (x as u32, y as u32),
+                ));
             }
         }
 
@@ -249,7 +286,33 @@ impl Application for MapMaker {
             }
 
             Message::ImageLoadFailed => {
-                println!("image load failed");
+                log::error!("image load failed");
+            }
+
+            Message::CenterPosition => {
+                //change the load pixel back to something centered
+                //and start loading tiles to adjust for the change
+                //TODO: start the load
+                let mut col_shift = 0;
+                let mut row_shift = 0;
+                self.tile_state.load_pixel;
+                if self.tile_state.load_pixel.0 < -256.0 {
+                    self.tile_state.load_pixel.0 += 256.0;
+                    row_shift = 1;
+                } else if self.tile_state.load_pixel.0 > 256.0 {
+                    self.tile_state.load_pixel.0 -= 256.0;
+                    row_shift = -1;
+                }
+
+                if self.tile_state.load_pixel.1 < -256.0 {
+                    self.tile_state.load_pixel.1 += 256.0;
+                    col_shift = 1;
+                } else if self.tile_state.load_pixel.1 > 256.0 {
+                    self.tile_state.load_pixel.1 -= 256.0;
+                    col_shift = -1;
+                }
+
+                MapMaker::shift_tiles(&mut self.tiles, row_shift, col_shift);
             }
         }
         Command::none()

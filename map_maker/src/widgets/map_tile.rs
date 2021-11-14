@@ -157,6 +157,8 @@ where
 
     fn hash_layout(&self, state: &mut Hasher) {
         use std::hash::Hash;
+        //TODO: proper hashing of layout
+        //self.state.load_pixel.hash(state);
         self.tile_handles.hash(state);
         self.width.hash(state);
         self.height.hash(state);
@@ -186,7 +188,7 @@ pub struct State {
     is_dragging: bool,
     last_position: (f32, f32),
     pub velocity: (f32, f32),
-    load_pixel: (f32, f32),
+    pub load_pixel: (f32, f32),
     last_click: Option<mouse::Click>,
 }
 
