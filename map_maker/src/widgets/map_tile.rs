@@ -23,7 +23,7 @@ use log;
 
 pub const TILE_DIMENSION: usize = 5;
 
-pub struct MapTile<'a, B> {
+pub struct MapTile<'a, B, Message> {
     state: &'a mut State,
     zoom_in_state: &'a mut button::State,
     zoom_out_state: &'a mut button::State,
@@ -32,9 +32,10 @@ pub struct MapTile<'a, B> {
     tile_handles: [[Option<image::Handle>; TILE_DIMENSION]; TILE_DIMENSION],
     width: Length,
     height: Length,
+    center_requester: Message,
 }
 
-impl<'a, B, Message, Renderer> Widget<Message, Renderer> for MapTile<'a, B>
+impl<'a, B, Message, Renderer> Widget<Message, Renderer> for MapTile<'a, B, Message>
 where
     //B: fn(&mut button::State) -> Button<'_, Message>,
     B: Fn(&mut button::State) -> Button<'_, Message, Renderer>,
@@ -66,7 +67,7 @@ where
         cursor_position: Point,
         renderer: &Renderer,
         _clipboard: &mut dyn Clipboard,
-        _messages: &mut Vec<Message>,
+        messages: &mut Vec<Message>,
     ) -> event::Status {
         let bounds = layout.bounds();
 
@@ -101,15 +102,24 @@ where
 
                     log::trace!(
                         "vel is {}, {}",
-                        self.state.velocity.0, self.state.velocity.1
+                        self.state.velocity.0,
+                        self.state.velocity.1
                     );
-                }
-                else{
-                    self.state.velocity =(0.0,0.0);
+                } else {
+                    self.state.velocity = (0.0, 0.0);
                 }
                 self.state.last_position = (position.x, position.y);
                 self.state.load_pixel.0 += -self.state.velocity.0;
                 self.state.load_pixel.1 += -self.state.velocity.1;
+                if self.state.center_requested == false && self.state.load_pixel.0.abs() > 256.0 || self.state.load_pixel.1.abs() > 256.0 {
+                    log::trace!("requesting centering");
+                    self.state.center_requested = true;
+                    messages.push(self.center_requester.clone());
+                }
+                else if self.state.center_requested {
+                    log::trace!("waiting for centering");
+
+                }
             }
 
             _ => {}
@@ -190,6 +200,7 @@ pub struct State {
     pub velocity: (f32, f32),
     pub load_pixel: (f32, f32),
     last_click: Option<mouse::Click>,
+    pub center_requested: bool,
 }
 
 impl State {
@@ -207,6 +218,7 @@ impl State {
             velocity: (0.0, 0.0),
             load_pixel,
             last_click,
+            center_requested: false,
         }
     }
 
@@ -226,7 +238,7 @@ impl State {
     }
 }
 
-impl<'a, B, Message, Renderer> MapTile<'a, B>
+impl<'a, B, Message, Renderer> MapTile<'a, B, Message>
 where
     Message: Clone,
     Renderer: self::Renderer + iced_native::button::Renderer,
@@ -239,6 +251,7 @@ where
         zoom_out_state: &'a mut button::State,
         zoom_in: B,
         zoom_out: B,
+        center_requester: Message,
     ) -> Self {
         let mut tile_handles: [[Option<image::Handle>; TILE_DIMENSION]; TILE_DIMENSION] =
             Default::default();
@@ -260,6 +273,7 @@ where
             tile_handles,
             width: Length::Fill,
             height: Length::Fill,
+            center_requester,
         }
     }
 
@@ -362,8 +376,8 @@ where
         load_point: (f32, f32),
     ) -> Self::Output {
         let mut primitives_vec: Vec<Primitive> = Vec::new();
-        log::info!("load point {}, {}",load_point.0, load_point.1);
-        let load_point = (load_point.0/256.0, load_point.1/256.0);
+        log::trace!("load point {}, {}", load_point.0, load_point.1);
+        let load_point = (load_point.0 / 256.0, load_point.1 / 256.0);
         let load_top_left = ((load_point.0 - 1.5) * 256.0, (load_point.1 - 1.5) * 256.0);
         let load_bottom_right = ((load_point.0 + 1.5) * 256.0, (load_point.1 + 1.5) * 256.0);
         for (idx_x, x) in tile_handles.iter().enumerate() {
@@ -435,7 +449,7 @@ where
                     let pixel_x = handle_top_left.0 - load_top_left.0 as f32 + x;
                     let pixel_y = handle_top_left.1 - load_top_left.1 as f32 + y;
 
-                    log::info!(
+                    log::trace!(
                         "putting tile {}, {} at {}, {}: {}x{}",
                         idx_x,
                         idx_y,
@@ -529,7 +543,7 @@ where
 
 //impl<'a, Message, B> Into<Element<'a, Message, Renderer<B>>> for Circle
 //impl<'a, B, Message, Renderer> Into<Element<'a, Message, Renderer>> for MapTile<'a, B, Message, Renderer>
-impl<'a, B, Message, Renderer> Into<Element<'a, Message, Renderer>> for MapTile<'a, B>
+impl<'a, B, Message, Renderer> Into<Element<'a, Message, Renderer>> for MapTile<'a, B, Message>
 where
     B: 'a + Fn(&mut button::State) -> Button<'_, Message, Renderer>,
     Message: 'a + Clone,

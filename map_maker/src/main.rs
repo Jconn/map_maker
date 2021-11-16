@@ -54,7 +54,7 @@ struct MapMaker {
     //each vector is an image tile
     //the widget handles loading the image tiles
     //
-    tiles: [[Vec<u8>; LOAD_TILE_DIMENSION]; LOAD_TILE_DIMENSION],
+    tiles: [[Tile; LOAD_TILE_DIMENSION]; LOAD_TILE_DIMENSION],
     zoom_in_state: button::State,
     zoom_out_state: button::State,
     cur_coords: (f32, f32),
@@ -64,8 +64,8 @@ struct MapMaker {
     tile_state: map_tile::State,
 }
 
-#[derive(Clone, Debug)]
-struct Tile {
+#[derive(Clone, Debug, Default)]
+pub struct Tile {
     target_url: (u32, u32, u32),
     dest_tile: (u32, u32),
     image: Vec<u8>,
@@ -81,7 +81,7 @@ impl Tile {
     }
 }
 #[derive(Clone, Debug)]
-enum Message {
+pub enum MyMessage {
     LoadedImage(Vec<Tile>),
     ZoomIn,
     ZoomOut,
@@ -99,7 +99,15 @@ enum MyError {
 
 impl MapMaker {
     //tile_handles: [[Option<image::Handle>; TILE_DIMENSION]; TILE_DIMENSION],
-
+    fn get_tile_imgs(&self) -> [[Vec<u8>; LOAD_TILE_DIMENSION]; LOAD_TILE_DIMENSION] {
+        let mut imgs: [[Vec<u8>; LOAD_TILE_DIMENSION]; LOAD_TILE_DIMENSION] = Default::default();
+        for x in 0..LOAD_TILE_DIMENSION {
+            for y in 0..LOAD_TILE_DIMENSION {
+                imgs[x][y] = self.tiles[x][y].image.clone();
+            }
+        }
+        imgs
+    }
     async fn get_tile(
         mut request_tile: Tile,
         client: Arc<reqwest::Client>,
@@ -124,6 +132,10 @@ impl MapMaker {
         load_tiles: Vec<Tile>,
     ) -> Result<Vec<Tile>, MyError> {
         let mut return_tiles = load_tiles.clone();
+        //TODO:
+        //fix the double-load occuring, e.g. when loading another row or column shift occurs 
+        //which causes the destination of the first load to be invalid
+        //a cache would fix this...
 
         //type FutureType = Box<dyn Future<Output = Result<Tile, MyError> > + Unpin  >;
         //type FutureType = fn(mut Tile,  Arc<reqwest::Client>) ->Result<Tile, MyError>;
@@ -146,10 +158,10 @@ impl MapMaker {
         Ok(return_tiles)
     }
 
-    fn process_load(resp: Result<Vec<Tile>, MyError>) -> Message {
+    fn process_load(resp: Result<Vec<Tile>, MyError>) -> MyMessage {
         match resp {
-            Ok(tiles) => Message::LoadedImage(tiles),
-            Err(err) => Message::ImageLoadFailed,
+            Ok(tiles) => MyMessage::LoadedImage(tiles),
+            Err(err) => MyMessage::ImageLoadFailed,
         }
     }
 
@@ -177,12 +189,12 @@ impl MapMaker {
     }
 
     fn shift_tiles(
-        tiles: &mut [[Vec<u8>; LOAD_TILE_DIMENSION]; LOAD_TILE_DIMENSION],
+        tiles: &mut [[Tile; LOAD_TILE_DIMENSION]; LOAD_TILE_DIMENSION],
         row: i32,
         col: i32,
     ) {
         fn rotate_col(
-            tiles: &mut [[Vec<u8>; LOAD_TILE_DIMENSION]; LOAD_TILE_DIMENSION],
+            tiles: &mut [[Tile; LOAD_TILE_DIMENSION]; LOAD_TILE_DIMENSION],
             col_rot: i32,
         ) {
             for t_row in tiles {
@@ -208,13 +220,59 @@ impl MapMaker {
 
         rotate_col(tiles, col);
     }
+
+    fn get_request_tiles(&self) -> Vec<Tile> {
+        let mut request_tiles: Vec<Tile> = Vec::new();
+        let empty_url = (0, 0, 0);
+
+        let base_url = self.tiles[2][2].target_url;
+        if base_url == empty_url {
+            log::error!("the base url can't be empty, unable to request tiles");
+            return request_tiles;
+        }
+        for x in 0..LOAD_TILE_DIMENSION {
+            for y in 0..LOAD_TILE_DIMENSION {
+                let tile = &self.tiles[x][y];
+                if tile.target_url == empty_url {
+                    let mut new_tile = Tile::new(
+                        (x as u32, y as u32, self.zoom_level as u32),
+                        (x as u32, y as u32),
+                    );
+                    let modded_x: i32 = base_url.0 as i32 + (x as i32 - 2);
+                    let modded_y: i32 = base_url.1 as i32 + (y as i32 - 2);
+                    if modded_x < 0 || modded_y < 0 {
+                        continue;
+                    }
+
+                    new_tile.target_url =
+                        (modded_x as u32, modded_y as u32, self.zoom_level as u32);
+                    request_tiles.push(new_tile);
+                }
+            }
+        }
+        request_tiles
+    }
+
+    fn print_tiles(&self) {
+        for x in 0..LOAD_TILE_DIMENSION {
+            for y in 0..LOAD_TILE_DIMENSION {
+                print!(
+                    "({},{},{}) ",
+                    self.tiles[x][y].target_url.0,
+                    self.tiles[x][y].target_url.1,
+                    self.tiles[x][y].target_url.2,
+                );
+            }
+            println!("");
+        }
+    }
 }
 impl Application for MapMaker {
     type Executor = executor::Default;
-    type Message = Message;
+    type Message = MyMessage;
     type Flags = ();
 
-    fn new(_flags: ()) -> (Self, Command<Message>) {
+    fn new(_flags: ()) -> (Self, Command<MyMessage>) {
         // strange syntax
         //let tiles: [[Vec<u8>; 4]; 4] = [[Vec::new(); 4]; 4];
         let tiles: [[Vec<u8>; LOAD_TILE_DIMENSION]; LOAD_TILE_DIMENSION] = Default::default();
@@ -237,7 +295,7 @@ impl Application for MapMaker {
         (
             MapMaker {
                 //TODO: add a new function that handles initializing the array
-                tiles: tiles.clone(),
+                tiles: Default::default(),
                 zoom_in_state: button::State::new(),
                 zoom_out_state: button::State::new(),
                 cur_coords: (42.473882, -83.473203),
@@ -257,15 +315,15 @@ impl Application for MapMaker {
         String::from("MapMaker")
     }
 
-    fn update(&mut self, message: Message) -> Command<Message> {
+    fn update(&mut self, message: MyMessage) -> Command<MyMessage> {
         match message {
-            Message::LoadedImage(tiles) => {
+            MyMessage::LoadedImage(tiles) => {
                 for tile in tiles {
                     let (x, y) = tile.dest_tile;
-                    self.tiles[x as usize][y as usize] = tile.image;
+                    self.tiles[x as usize][y as usize] = tile;
                 }
             }
-            Message::ZoomIn => {
+            MyMessage::ZoomIn => {
                 log::info!("me zoom in");
 
                 self.zoom_level += 1;
@@ -275,7 +333,7 @@ impl Application for MapMaker {
                     MapMaker::process_load,
                 );
             }
-            Message::ZoomOut => {
+            MyMessage::ZoomOut => {
                 println!("me zoom out");
                 self.zoom_level -= 1;
                 let request_tiles = self.generate_tiles();
@@ -285,61 +343,79 @@ impl Application for MapMaker {
                 );
             }
 
-            Message::ImageLoadFailed => {
+            MyMessage::ImageLoadFailed => {
                 log::error!("image load failed");
             }
 
-            Message::CenterPosition => {
+            MyMessage::CenterPosition => {
                 //change the load pixel back to something centered
                 //and start loading tiles to adjust for the change
                 //TODO: start the load
                 let mut col_shift = 0;
                 let mut row_shift = 0;
                 self.tile_state.load_pixel;
-                if self.tile_state.load_pixel.0 < -256.0 {
-                    self.tile_state.load_pixel.0 += 256.0;
-                    row_shift = 1;
-                } else if self.tile_state.load_pixel.0 > 256.0 {
-                    self.tile_state.load_pixel.0 -= 256.0;
-                    row_shift = -1;
+                while self.tile_state.load_pixel.0.abs() > 256.0 {
+                    if self.tile_state.load_pixel.0 < -256.0 {
+                        self.tile_state.load_pixel.0 += 256.0;
+                        row_shift += 1;
+                    } else if self.tile_state.load_pixel.0 > 256.0 {
+                        self.tile_state.load_pixel.0 -= 256.0;
+                        row_shift -= 1;
+                    }
                 }
 
-                if self.tile_state.load_pixel.1 < -256.0 {
-                    self.tile_state.load_pixel.1 += 256.0;
-                    col_shift = 1;
-                } else if self.tile_state.load_pixel.1 > 256.0 {
-                    self.tile_state.load_pixel.1 -= 256.0;
-                    col_shift = -1;
+                while self.tile_state.load_pixel.1.abs() > 256.0 {
+                    if self.tile_state.load_pixel.1 < -256.0 {
+                        self.tile_state.load_pixel.1 += 256.0;
+                        col_shift += 1;
+                    } else if self.tile_state.load_pixel.1 > 256.0 {
+                        self.tile_state.load_pixel.1 -= 256.0;
+                        col_shift -= 1;
+                    }
                 }
 
+                //TODO: request tiles after shifting
+                //          -will probably move to storing Tile objects rather than Tile as an
+                //          array,that way we have no trouble with knowing what each tile was
+                //          loaded from
+                log::info!("shifting {}, {}", row_shift, col_shift);
                 MapMaker::shift_tiles(&mut self.tiles, row_shift, col_shift);
+                let request_tiles = self.get_request_tiles();
+                self.tile_state.center_requested = false;
+                self.print_tiles();
+                return Command::perform(
+                    MapMaker::load(self.client.clone(), request_tiles),
+                    MapMaker::process_load,
+                );
             }
         }
         Command::none()
     }
 
-    fn view(&mut self) -> Element<'_, Message> {
-        fn zoom_in_spawner(state: &mut button::State) -> Button<'_, Message> {
-            Button::new(state, Text::new("zoom in")).on_press(Message::ZoomIn)
+    fn view(&mut self) -> Element<'_, MyMessage> {
+        fn zoom_in_spawner(state: &mut button::State) -> Button<'_, MyMessage> {
+            Button::new(state, Text::new("zoom in")).on_press(MyMessage::ZoomIn)
         }
-        fn zoom_out_spawner(state: &mut button::State) -> Button<'_, Message> {
-            Button::new(state, Text::new("zoom out")).on_press(Message::ZoomOut)
+        fn zoom_out_spawner(state: &mut button::State) -> Button<'_, MyMessage> {
+            Button::new(state, Text::new("zoom out")).on_press(MyMessage::ZoomOut)
         }
-        type ButtonSpawner = fn(&mut button::State) -> Button<'_, Message>;
+        type ButtonSpawner = fn(&mut button::State) -> Button<'_, MyMessage>;
         //let content = map_tile::MapTile::new(self.tiles.clone(), &mut self.button_state, zoom_spawner);
 
         //let content = map_tile::MapTile::new(self.tiles.clone(), &mut self.button_state, |state|-> Button<'_, Message>{
         //    Button::new(state, Text::new("Press Me!")).on_press(Message::ButtonPressed)
         //});
-
+        //cannot call this function in the container declaration because of borrowing rules
+        let imgs = self.get_tile_imgs();
         Container::new(map_tile::MapTile::new(
             &mut self.tile_state,
-            self.tiles.clone(),
+            imgs,
             &mut self.zoom_in_state,
             &mut self.zoom_out_state,
             //https://stackoverflow.com/questions/27895946/expected-fn-item-found-a-different-fn-item-when-working-with-function-pointer
             zoom_in_spawner as ButtonSpawner,
             zoom_out_spawner as ButtonSpawner,
+            MyMessage::CenterPosition,
         ))
         .width(Length::Fill)
         .height(Length::Fill)
