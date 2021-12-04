@@ -140,39 +140,6 @@ impl MapMaker {
         }
     }
 
-    fn shift_tiles(
-        tiles: &mut [[Tile; LOAD_TILE_DIMENSION]; LOAD_TILE_DIMENSION],
-        row: i32,
-        col: i32,
-    ) {
-        fn rotate_col(
-            tiles: &mut [[Tile; LOAD_TILE_DIMENSION]; LOAD_TILE_DIMENSION],
-            col_rot: i32,
-        ) {
-            for t_row in tiles {
-                if col_rot > 0 {
-                    t_row.rotate_right(col_rot as usize);
-                    t_row[0..col_rot as usize].fill(Default::default());
-                } else if col_rot < 0 {
-                    t_row.rotate_left(-col_rot as usize);
-                    t_row[(LOAD_TILE_DIMENSION as i32 + col_rot) as usize
-                        ..LOAD_TILE_DIMENSION as usize]
-                        .fill(Default::default());
-                }
-            }
-        }
-        if row > 0 {
-            tiles.rotate_right(row as usize);
-            tiles[0..row as usize].fill(Default::default());
-        } else if row < 0 {
-            tiles.rotate_left(-row as usize);
-            tiles[(LOAD_TILE_DIMENSION as i32 + row) as usize..LOAD_TILE_DIMENSION]
-                .fill(Default::default());
-        }
-
-        rotate_col(tiles, col);
-    }
-
     fn print_tiles(&self) {
         for x in 0..LOAD_TILE_DIMENSION {
             for y in 0..LOAD_TILE_DIMENSION {
@@ -210,7 +177,7 @@ impl Application for MapMaker {
                 zoom_out_state: button::State::new(),
                 cur_coords: (42.473882, -83.473203),
                 zoom_level,
-                load_pixel: (256.0 * 12.0, 256.0 * 12.0),
+                load_pixel: (256.0 * 4.0, 256.0 * 5.0),
                 client: client.clone(),
                 tile_state: map_tile::State::default(),
                 tile_manager: TileManager::new(),
@@ -243,6 +210,8 @@ impl Application for MapMaker {
                 log::info!("me zoom in");
 
                 self.zoom_level += 1;
+                self.load_pixel.0 = self.load_pixel.0 * 2.;
+                self.load_pixel.1 = self.load_pixel.1 * 2.;
                 self.populate_tiles();
                 return Command::perform(
                     self.tile_manager.generate_async_load(),
@@ -252,6 +221,8 @@ impl Application for MapMaker {
             MyMessage::ZoomOut => {
                 println!("me zoom out");
                 self.zoom_level -= 1;
+                self.load_pixel.0 = self.load_pixel.0 * 0.5;
+                self.load_pixel.1 = self.load_pixel.1 * 0.5;
                 self.populate_tiles();
                 return Command::perform(
                     self.tile_manager.generate_async_load(),
@@ -273,20 +244,20 @@ impl Application for MapMaker {
                 while self.tile_state.load_pixel.0.abs() > 256.0 {
                     if self.tile_state.load_pixel.0 < -256.0 {
                         self.tile_state.load_pixel.0 += 256.0;
-                        x_delta = 256.0;
+                        x_delta = -256.0;
                     } else if self.tile_state.load_pixel.0 > 256.0 {
                         self.tile_state.load_pixel.0 -= 256.0;
-                        x_delta = -256.0;
+                        x_delta = 256.0;
                     }
                 }
 
                 while self.tile_state.load_pixel.1.abs() > 256.0 {
                     if self.tile_state.load_pixel.1 < -256.0 {
                         self.tile_state.load_pixel.1 += 256.0;
-                        y_delta = 256.0;
+                        y_delta = -256.0;
                     } else if self.tile_state.load_pixel.1 > 256.0 {
                         self.tile_state.load_pixel.1 -= 256.0;
-                        y_delta = -256.0;
+                        y_delta = 256.0;
                     }
                 }
 

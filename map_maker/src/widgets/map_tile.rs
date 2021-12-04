@@ -106,19 +106,31 @@ where
                         self.state.velocity.1
                     );
                 } else {
+                    if self.state.velocity.0 - 0.01 > 0.0 {
+                        self.state.velocity.0 -= 0.01;
+                    } else {
+                        self.state.velocity.0 = 0.0;
+                    }
+
+                    if self.state.velocity.1 - 0.01 > 0.0 {
+                        self.state.velocity.1 -= 0.01;
+                    } else {
+                        self.state.velocity.1 = 0.0;
+                    }
+
                     self.state.velocity = (0.0, 0.0);
                 }
                 self.state.last_position = (position.x, position.y);
                 self.state.load_pixel.0 += -self.state.velocity.0;
                 self.state.load_pixel.1 += -self.state.velocity.1;
-                if self.state.center_requested == false && self.state.load_pixel.0.abs() > 256.0 || self.state.load_pixel.1.abs() > 256.0 {
+                if self.state.center_requested == false && self.state.load_pixel.0.abs() > 256.0
+                    || self.state.load_pixel.1.abs() > 256.0
+                {
                     log::trace!("requesting centering");
                     self.state.center_requested = true;
                     messages.push(self.center_requester.clone());
-                }
-                else if self.state.center_requested {
+                } else if self.state.center_requested {
                     log::trace!("waiting for centering");
-
                 }
             }
 
@@ -172,6 +184,10 @@ where
         self.tile_handles.hash(state);
         self.width.hash(state);
         self.height.hash(state);
+        let interpreted_x = (self.state.velocity.0 * 1000.0) as i32;
+        let interpreted_y = (self.state.velocity.1 * 1000.0) as i32;
+        interpreted_x.hash(state);
+        interpreted_y.hash(state);
     }
 
     /// Returns the overlay of the [`Widget`], if there is any.
