@@ -5,7 +5,9 @@ implementation is being done with iced.
 
 TODO:
 -slippy map (wip)
+
 -drawing maps
+
 -exporting maps
 
 ![](map_maker/demo/map_maker.gif)
