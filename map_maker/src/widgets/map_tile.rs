@@ -116,8 +116,9 @@ where
                     }
                 }
                 self.state.last_position = (position.x, position.y);
-                if self.state.center_requested == false && self.state.load_pixel.0.abs() > 256.0
-                    || self.state.load_pixel.1.abs() > 256.0
+                if self.state.center_requested == false
+                    && (self.state.load_pixel.0.abs() > 256.0
+                        || self.state.load_pixel.1.abs() > 256.0)
                 {
                     log::trace!("requesting centering");
                     self.state.center_requested = true;

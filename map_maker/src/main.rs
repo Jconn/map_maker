@@ -265,7 +265,6 @@ impl Application for MapMaker {
                                 }
                             }
                         };
-
                         self.tile_state.velocity.0 += decrementer;
                     }
 
@@ -281,36 +280,32 @@ impl Application for MapMaker {
                                 }
                             }
                         };
-
                         self.tile_state.velocity.1 += decrementer;
                     }
                     self.tile_state.load_pixel.0 += -self.tile_state.velocity.0;
                     self.tile_state.load_pixel.1 += -self.tile_state.velocity.1;
 
                     if self.tile_state.center_requested == false
-                        && self.tile_state.load_pixel.0.abs() > 256.0
-                        || self.tile_state.load_pixel.1.abs() > 256.0
+                        && ((self.tile_state.load_pixel.0.abs() > 256.0)
+                            || (self.tile_state.load_pixel.1.abs() > 256.0))
                     {
                         log::trace!("requesting centering");
                         self.tile_state.center_requested = true;
                         self.tile_state.vel_requested = true;
 
-                        Command::batch(vec![
+                        return Command::batch(vec![
                             Command::perform(MapMaker::velocity_wait(), |_| {
                                 MyMessage::VelocityEvent
                             }),
                             Command::perform(async {}, |_| MyMessage::CenterPosition),
                         ]);
-
-                        //return Command::perform(
-                        //    MapMaker::velocity_wait(),
-                        //    |_| {
-
-                        //    Command::batch(vec![
-                        //        MyMessage::CenterPosition,
-                        //        MyMessage::VelocityEvent,
-                        //    ])},
-                        //);
+                    } else {
+                        log::info!(
+                            "tile state is  {},{}   ({})",
+                            self.tile_state.load_pixel.0,
+                            self.tile_state.load_pixel.1,
+                            self.tile_state.center_requested
+                        );
                     }
                 }
                 self.tile_state.vel_requested = true;
@@ -318,12 +313,12 @@ impl Application for MapMaker {
             }
 
             MyMessage::CenterPosition => {
+                log::info!("centering event");
                 //change the load pixel back to something centered
                 //and start loading tiles to adjust for the change
                 //TODO: start the load
                 let mut x_delta = 0.0;
                 let mut y_delta = 0.0;
-                self.tile_state.load_pixel;
                 while self.tile_state.load_pixel.0.abs() > 256.0 {
                     if self.tile_state.load_pixel.0 < -256.0 {
                         self.tile_state.load_pixel.0 += 256.0;
