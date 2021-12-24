@@ -136,7 +136,7 @@ impl MapMaker {
     }
 
     async fn velocity_wait() {
-        tokio::time::sleep(std::time::Duration::new(0, 10000)).await;
+        tokio::time::sleep(std::time::Duration::new(0, 1e7 as u32)).await;
         //(Duration::from_secs(3)).await;
     }
 
@@ -242,24 +242,26 @@ impl Application for MapMaker {
             }
 
             MyMessage::VelocityEvent => {
-                log::info!(
-                    "velocity event ({},{})",
-                    self.tile_state.velocity.0,
-                    self.tile_state.velocity.1
-                );
+                self.tile_state.vel_requested = false;
                 if self.tile_state.velocity.0 == 0.0 && self.tile_state.velocity.1 == 0.0 {
                     return Command::none();
                 }
+
                 if self.tile_state.is_dragging == false {
+                    log::info!(
+                        "velocity event ({},{})",
+                        self.tile_state.velocity.0,
+                        self.tile_state.velocity.1
+                    );
                     if self.tile_state.velocity.0 != 0.0 {
                         let decrementer = {
-                            if self.tile_state.velocity.0.abs() < 0.001 {
+                            if self.tile_state.velocity.0.abs() < 0.1 {
                                 -self.tile_state.velocity.0
                             } else {
                                 if self.tile_state.velocity.0 > 0.0 {
-                                    -0.001
+                                    -0.1
                                 } else {
-                                    0.001
+                                    0.1
                                 }
                             }
                         };
@@ -269,13 +271,13 @@ impl Application for MapMaker {
 
                     if self.tile_state.velocity.1 != 0.0 {
                         let decrementer = {
-                            if self.tile_state.velocity.1.abs() < 0.001 {
+                            if self.tile_state.velocity.1.abs() < 0.1 {
                                 -self.tile_state.velocity.1
                             } else {
                                 if self.tile_state.velocity.1 > 0.0 {
-                                    -0.001
+                                    -0.1
                                 } else {
-                                    0.001
+                                    0.1
                                 }
                             }
                         };
@@ -285,15 +287,33 @@ impl Application for MapMaker {
                     self.tile_state.load_pixel.0 += -self.tile_state.velocity.0;
                     self.tile_state.load_pixel.1 += -self.tile_state.velocity.1;
 
-                    if self.tile_state.center_requested == false && self.tile_state.load_pixel.0.abs() > 256.0
+                    if self.tile_state.center_requested == false
+                        && self.tile_state.load_pixel.0.abs() > 256.0
                         || self.tile_state.load_pixel.1.abs() > 256.0
                     {
                         log::trace!("requesting centering");
                         self.tile_state.center_requested = true;
-                        return Command::perform(MapMaker::velocity_wait(), |_| MyMessage::CenterPosition);
-                    } 
-                }
+                        self.tile_state.vel_requested = true;
 
+                        Command::batch(vec![
+                            Command::perform(MapMaker::velocity_wait(), |_| {
+                                MyMessage::VelocityEvent
+                            }),
+                            Command::perform(async {}, |_| MyMessage::CenterPosition),
+                        ]);
+
+                        //return Command::perform(
+                        //    MapMaker::velocity_wait(),
+                        //    |_| {
+
+                        //    Command::batch(vec![
+                        //        MyMessage::CenterPosition,
+                        //        MyMessage::VelocityEvent,
+                        //    ])},
+                        //);
+                    }
+                }
+                self.tile_state.vel_requested = true;
                 return Command::perform(MapMaker::velocity_wait(), |_| MyMessage::VelocityEvent);
             }
 

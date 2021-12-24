@@ -109,9 +109,11 @@ where
                     );
                     self.state.load_pixel.0 += -self.state.velocity.0;
                     self.state.load_pixel.1 += -self.state.velocity.1;
-                }
-                if self.state.velocity.0.abs() > 0.0 || self.state.velocity.1.abs() > 0.0 {
-                    messages.push(self.velocity_event.clone());
+                } else {
+                    if self.state.vel_requested == false {
+                        messages.push(self.velocity_event.clone());
+                        self.state.vel_requested = true;
+                    }
                 }
                 self.state.last_position = (position.x, position.y);
                 if self.state.center_requested == false && self.state.load_pixel.0.abs() > 256.0
@@ -208,6 +210,7 @@ pub struct State {
     pub load_pixel: (f32, f32),
     last_click: Option<mouse::Click>,
     pub center_requested: bool,
+    pub vel_requested: bool,
 }
 
 impl State {
@@ -226,6 +229,7 @@ impl State {
             load_pixel,
             last_click,
             center_requested: false,
+            vel_requested: false,
         }
     }
 
