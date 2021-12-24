@@ -82,6 +82,7 @@ pub enum MyMessage {
     ZoomOut,
     ImageLoadFailed,
     CenterPosition,
+    VelocityEvent,
 }
 
 #[derive(Debug, Error)]
@@ -94,6 +95,7 @@ enum MyError {
 
 impl MapMaker {
     //tile_handles: [[Option<image::Handle>; TILE_DIMENSION]; TILE_DIMENSION],
+    //
     fn get_tile_imgs(&self) -> [[Vec<u8>; LOAD_TILE_DIMENSION]; LOAD_TILE_DIMENSION] {
         let mut imgs: [[Vec<u8>; LOAD_TILE_DIMENSION]; LOAD_TILE_DIMENSION] = Default::default();
         for x in 0..LOAD_TILE_DIMENSION {
@@ -131,6 +133,11 @@ impl MapMaker {
                 }
             }
         }
+    }
+
+    async fn velocity_wait() {
+        tokio::time::sleep(std::time::Duration::new(0, 10000)).await;
+        //(Duration::from_secs(3)).await;
     }
 
     fn process_load(resp: Option<Vec<Tile>>) -> MyMessage {
@@ -234,6 +241,62 @@ impl Application for MapMaker {
                 log::error!("image load failed");
             }
 
+            MyMessage::VelocityEvent => {
+                log::info!(
+                    "velocity event ({},{})",
+                    self.tile_state.velocity.0,
+                    self.tile_state.velocity.1
+                );
+                if self.tile_state.velocity.0 == 0.0 && self.tile_state.velocity.1 == 0.0 {
+                    return Command::none();
+                }
+                if self.tile_state.is_dragging == false {
+                    if self.tile_state.velocity.0 != 0.0 {
+                        let decrementer = {
+                            if self.tile_state.velocity.0.abs() < 0.001 {
+                                -self.tile_state.velocity.0
+                            } else {
+                                if self.tile_state.velocity.0 > 0.0 {
+                                    -0.001
+                                } else {
+                                    0.001
+                                }
+                            }
+                        };
+
+                        self.tile_state.velocity.0 += decrementer;
+                    }
+
+                    if self.tile_state.velocity.1 != 0.0 {
+                        let decrementer = {
+                            if self.tile_state.velocity.1.abs() < 0.001 {
+                                -self.tile_state.velocity.1
+                            } else {
+                                if self.tile_state.velocity.1 > 0.0 {
+                                    -0.001
+                                } else {
+                                    0.001
+                                }
+                            }
+                        };
+
+                        self.tile_state.velocity.1 += decrementer;
+                    }
+                    self.tile_state.load_pixel.0 += -self.tile_state.velocity.0;
+                    self.tile_state.load_pixel.1 += -self.tile_state.velocity.1;
+
+                    if self.tile_state.center_requested == false && self.tile_state.load_pixel.0.abs() > 256.0
+                        || self.tile_state.load_pixel.1.abs() > 256.0
+                    {
+                        log::trace!("requesting centering");
+                        self.tile_state.center_requested = true;
+                        return Command::perform(MapMaker::velocity_wait(), |_| MyMessage::CenterPosition);
+                    } 
+                }
+
+                return Command::perform(MapMaker::velocity_wait(), |_| MyMessage::VelocityEvent);
+            }
+
             MyMessage::CenterPosition => {
                 //change the load pixel back to something centered
                 //and start loading tiles to adjust for the change
@@ -301,6 +364,7 @@ impl Application for MapMaker {
             zoom_in_spawner as ButtonSpawner,
             zoom_out_spawner as ButtonSpawner,
             MyMessage::CenterPosition,
+            MyMessage::VelocityEvent,
         ))
         .width(Length::Fill)
         .height(Length::Fill)

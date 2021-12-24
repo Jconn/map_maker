@@ -33,6 +33,7 @@ pub struct MapTile<'a, B, Message> {
     width: Length,
     height: Length,
     center_requester: Message,
+    velocity_event: Message,
 }
 
 impl<'a, B, Message, Renderer> Widget<Message, Renderer> for MapTile<'a, B, Message>
@@ -60,6 +61,7 @@ where
         let (width, height) = (256.0 * 3.0, 256.0 * 3.0);
         layout::Node::new(limits.resolve(Size::new(width, height)))
     }
+
     fn on_event(
         &mut self,
         event: Event,
@@ -105,24 +107,13 @@ where
                         self.state.velocity.0,
                         self.state.velocity.1
                     );
-                } else {
-                    if self.state.velocity.0 - 0.01 > 0.0 {
-                        self.state.velocity.0 -= 0.01;
-                    } else {
-                        self.state.velocity.0 = 0.0;
-                    }
-
-                    if self.state.velocity.1 - 0.01 > 0.0 {
-                        self.state.velocity.1 -= 0.01;
-                    } else {
-                        self.state.velocity.1 = 0.0;
-                    }
-
-                    self.state.velocity = (0.0, 0.0);
+                    self.state.load_pixel.0 += -self.state.velocity.0;
+                    self.state.load_pixel.1 += -self.state.velocity.1;
+                }
+                if self.state.velocity.0.abs() > 0.0 || self.state.velocity.1.abs() > 0.0 {
+                    messages.push(self.velocity_event.clone());
                 }
                 self.state.last_position = (position.x, position.y);
-                self.state.load_pixel.0 += -self.state.velocity.0;
-                self.state.load_pixel.1 += -self.state.velocity.1;
                 if self.state.center_requested == false && self.state.load_pixel.0.abs() > 256.0
                     || self.state.load_pixel.1.abs() > 256.0
                 {
@@ -211,7 +202,7 @@ where
 #[derive(Debug, Default, Clone, Copy)]
 pub struct State {
     is_focused: bool,
-    is_dragging: bool,
+    pub is_dragging: bool,
     last_position: (f32, f32),
     pub velocity: (f32, f32),
     pub load_pixel: (f32, f32),
@@ -268,6 +259,7 @@ where
         zoom_in: B,
         zoom_out: B,
         center_requester: Message,
+        velocity_event: Message,
     ) -> Self {
         let mut tile_handles: [[Option<image::Handle>; TILE_DIMENSION]; TILE_DIMENSION] =
             Default::default();
@@ -290,6 +282,7 @@ where
             width: Length::Fill,
             height: Length::Fill,
             center_requester,
+            velocity_event,
         }
     }
 
